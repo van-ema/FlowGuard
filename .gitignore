@@ -1,0 +1,17 @@
+/target/
+
+# Rust
+Cargo.lock
+*.rs.bk
+
+# Editors
+.DS_Store
+.idea/
+.vscode/
+
+# Coverage / test output
+*.profraw
+*.profdata
+
+# Logs
+*.log
