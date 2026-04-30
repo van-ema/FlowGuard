@@ -71,6 +71,7 @@ pub fn curl_bash() -> Scenario {
 
 #[cfg(test)]
 mod tests {
+    use crate::graph::EdgeKind;
     use crate::policy::{DecisionKind, PolicyId};
     use crate::scenarios::ScenarioRunner;
 
@@ -82,7 +83,14 @@ mod tests {
 
         let outcome = ScenarioRunner::new().run(&scenario);
 
-        assert_eq!(outcome.graph.edges.len(), 4);
+        assert_eq!(outcome.graph.edges.len(), 5);
+        assert!(
+            outcome
+                .graph
+                .edges
+                .iter()
+                .any(|edge| edge.kind == EdgeKind::Fork)
+        );
         assert_eq!(outcome.enforcement.decision.kind, DecisionKind::Block);
         assert_eq!(outcome.enforcement.decision.violations.len(), 1);
         assert_eq!(

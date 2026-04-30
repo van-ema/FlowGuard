@@ -79,13 +79,20 @@ impl Replay {
                 let process_node = self.graph.process_node(process);
                 self.labels.seed(process_node, Label::Approved);
             }
-            Event::Fork { parent, child, .. } => {
+            Event::Fork { parent, child, at } => {
                 self.runtime
                     .fork_process(parent, child)
                     .unwrap_or_else(|err| panic!("{err}"));
                 let parent_node = self.graph.process_node(parent);
                 let child_node = self.graph.process_node(child);
-                self.labels.copy_all(parent_node, child_node);
+                let edge_id = self.graph.append_edge(
+                    parent_node,
+                    child_node,
+                    EdgeKind::Fork,
+                    *at,
+                    observed.sequence,
+                );
+                self.labels.propagate_all(parent_node, child_node, edge_id);
             }
             Event::Exec {
                 parent, child, at, ..
