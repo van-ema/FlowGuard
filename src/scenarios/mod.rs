@@ -7,6 +7,7 @@ use crate::policy::{self, Violation};
 use crate::state::{RuntimeObject, RuntimeState};
 
 pub mod curl_bash;
+pub mod secret_to_network;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Scenario {
@@ -129,6 +130,12 @@ impl Replay {
                 process, fd, path, ..
             } => {
                 self.runtime.map_open_file(process, *fd, path.clone());
+                if is_secret_path(path) {
+                    let file_node = self
+                        .graph
+                        .runtime_object_node(&RuntimeObject::File { path: path.clone() });
+                    self.labels.seed(file_node, Label::Secret);
+                }
             }
             Event::Pipe {
                 process,
@@ -231,7 +238,48 @@ impl Replay {
                 self.labels
                     .propagate_label(endpoint_node, process_node, Label::External, edge_id);
             }
-            Event::Send { .. } => {}
+            Event::Send {
+                process, fd, at, ..
+            } => {
+                let process_node = self.graph.process_node(process);
+                let object = self
+                    .runtime
+                    .lookup_fd(process, *fd)
+                    .unwrap_or_else(|err| panic!("{err}"));
+                let socket_id = match object {
+                    RuntimeObject::Socket { socket } => *socket,
+                    other => panic!("send on non-socket fd: {:?} {:?}", process, other),
+                };
+                let endpoint = self
+                    .runtime
+                    .socket_endpoint(socket_id)
+                    .unwrap_or_else(|err| panic!("{err}"))
+                    .clone();
+                let endpoint_node = self.graph.endpoint_node(endpoint);
+                let edge_id = self.graph.append_edge(
+                    process_node,
+                    endpoint_node,
+                    EdgeKind::Send,
+                    *at,
+                    observed.sequence,
+                );
+                self.labels
+                    .propagate_all(process_node, endpoint_node, edge_id);
+
+                if let Some(violation) =
+                    policy::check_secret_to_network(&self.labels, endpoint_node, observed, edge_id)
+                {
+                    self.explanations.push(explain::for_label(
+                        violation.policy,
+                        endpoint_node,
+                        Label::Secret,
+                        &self.labels,
+                        &self.graph,
+                    ));
+                    self.violations.push(violation);
+                    self.blocked_event = Some(observed.clone());
+                }
+            }
             Event::Exit { .. } => {}
         }
     }
@@ -249,4 +297,8 @@ impl Replay {
             explanations: self.explanations,
         }
     }
+}
+
+fn is_secret_path(path: &std::path::Path) -> bool {
+    path.starts_with("/home/user/.ssh")
 }

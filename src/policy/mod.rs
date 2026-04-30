@@ -48,6 +48,23 @@ pub fn check_external_to_exec(
     None
 }
 
+pub fn check_secret_to_network(
+    labels: &LabelState,
+    endpoint_node: NodeId,
+    sink_event: &ObservedEvent,
+    sink_edge: EdgeId,
+) -> Option<Violation> {
+    if labels.has_label(endpoint_node, Label::Secret) {
+        return Some(Violation {
+            policy: PolicyId::SecretToNetwork,
+            sink_event: sink_event.clone(),
+            sink_edge: Some(sink_edge),
+        });
+    }
+
+    None
+}
+
 pub fn decide(violations: Vec<Violation>) -> Decision {
     let kind = if violations.is_empty() {
         DecisionKind::Allow
