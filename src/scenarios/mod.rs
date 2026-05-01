@@ -7,16 +7,17 @@ use crate::policy::{self, Violation};
 use crate::state::{RuntimeObject, RuntimeState};
 
 pub mod curl_bash;
+pub mod file;
 pub mod secret_to_network;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Scenario {
-    pub name: &'static str,
+    pub name: String,
     pub events: Vec<ObservedEvent>,
 }
 
 impl Scenario {
-    pub fn new(name: &'static str, events: Vec<Event>) -> Self {
+    pub fn new(name: impl Into<String>, events: Vec<Event>) -> Self {
         let events = events
             .into_iter()
             .enumerate()
@@ -26,7 +27,10 @@ impl Scenario {
             })
             .collect();
 
-        Self { name, events }
+        Self {
+            name: name.into(),
+            events,
+        }
     }
 }
 
