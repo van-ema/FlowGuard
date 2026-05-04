@@ -17,6 +17,41 @@ pub struct PipeId(pub u64);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct SocketId(pub u64);
 
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum AddressFamily {
+    // Linux AF_ALG exposes kernel crypto operations through sockets.
+    AfAlg,
+    Other(String),
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum SocketType {
+    Stream,
+    Datagram,
+    SeqPacket,
+    Other(String),
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum SocketProtocol {
+    Default,
+    Other(String),
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum SocketLevel {
+    SolAlg,
+    Other(String),
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum SocketOption {
+    AlgSetKey,
+    AlgSetAeadAssoclen,
+    AlgSetAeadAuthsize,
+    Other(String),
+}
+
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ProcessId {
     pub pid: u32,
@@ -119,6 +154,28 @@ pub enum Event {
     Send {
         process: ProcessId,
         fd: Fd,
+        len: usize,
+        at: Timestamp,
+    },
+    SocketCreate {
+        process: ProcessId,
+        fd: Fd,
+        family: AddressFamily,
+        socket_type: SocketType,
+        protocol: SocketProtocol,
+        at: Timestamp,
+    },
+    SetSockOpt {
+        process: ProcessId,
+        fd: Fd,
+        level: SocketLevel,
+        option: SocketOption,
+        at: Timestamp,
+    },
+    Splice {
+        process: ProcessId,
+        from_fd: Fd,
+        to_fd: Fd,
         len: usize,
         at: Timestamp,
     },

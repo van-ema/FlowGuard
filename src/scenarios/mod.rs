@@ -284,6 +284,9 @@ impl Replay {
                     self.blocked_event = Some(observed.clone());
                 }
             }
+            Event::SocketCreate { .. } => {}
+            Event::SetSockOpt { .. } => {}
+            Event::Splice { .. } => {}
             Event::Exit { .. } => {}
         }
     }

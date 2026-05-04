@@ -3,7 +3,10 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use crate::events::{Endpoint, Event, Fd, PipeId, ProcessId, StartTime, Timestamp};
+use crate::events::{
+    AddressFamily, Endpoint, Event, Fd, PipeId, ProcessId, SocketLevel, SocketOption,
+    SocketProtocol, SocketType, StartTime, Timestamp,
+};
 
 use super::Scenario;
 
@@ -121,6 +124,28 @@ enum ScenarioEvent {
         len: usize,
         at: u64,
     },
+    SocketCreate {
+        process: ScenarioProcess,
+        fd: i32,
+        family: ScenarioAddressFamily,
+        socket_type: ScenarioSocketType,
+        protocol: Option<ScenarioSocketProtocol>,
+        at: u64,
+    },
+    SetSockOpt {
+        process: ScenarioProcess,
+        fd: i32,
+        level: ScenarioSocketLevel,
+        option: ScenarioSocketOption,
+        at: u64,
+    },
+    Splice {
+        process: ScenarioProcess,
+        from_fd: i32,
+        to_fd: i32,
+        len: usize,
+        at: u64,
+    },
     Exit {
         process: ScenarioProcess,
         at: u64,
@@ -137,6 +162,45 @@ struct ScenarioProcess {
 struct ScenarioEndpoint {
     host: String,
     port: u16,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+enum ScenarioAddressFamily {
+    AfAlg,
+    Other(String),
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+enum ScenarioSocketType {
+    Stream,
+    Datagram,
+    SeqPacket,
+    Other(String),
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+enum ScenarioSocketProtocol {
+    Default,
+    Other(String),
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+enum ScenarioSocketLevel {
+    SolAlg,
+    Other(String),
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+enum ScenarioSocketOption {
+    AlgSetKey,
+    AlgSetAeadAssoclen,
+    AlgSetAeadAuthsize,
+    Other(String),
 }
 
 pub fn load_yaml_file(path: impl AsRef<Path>) -> Result<Scenario, ScenarioFileError> {
@@ -295,6 +359,49 @@ impl ScenarioEvent {
                 len,
                 at: Timestamp(at),
             },
+            Self::SocketCreate {
+                process,
+                fd,
+                family,
+                socket_type,
+                protocol,
+                at,
+            } => Event::SocketCreate {
+                process: process.into(),
+                fd: Fd(fd),
+                family: family.into(),
+                socket_type: socket_type.into(),
+                protocol: protocol
+                    .map(SocketProtocol::from)
+                    .unwrap_or(SocketProtocol::Default),
+                at: Timestamp(at),
+            },
+            Self::SetSockOpt {
+                process,
+                fd,
+                level,
+                option,
+                at,
+            } => Event::SetSockOpt {
+                process: process.into(),
+                fd: Fd(fd),
+                level: level.into(),
+                option: option.into(),
+                at: Timestamp(at),
+            },
+            Self::Splice {
+                process,
+                from_fd,
+                to_fd,
+                len,
+                at,
+            } => Event::Splice {
+                process: process.into(),
+                from_fd: Fd(from_fd),
+                to_fd: Fd(to_fd),
+                len,
+                at: Timestamp(at),
+            },
             Self::Exit { process, at } => Event::Exit {
                 process: process.into(),
                 at: Timestamp(at),
@@ -315,12 +422,62 @@ impl From<ScenarioEndpoint> for Endpoint {
     }
 }
 
+impl From<ScenarioAddressFamily> for AddressFamily {
+    fn from(value: ScenarioAddressFamily) -> Self {
+        match value {
+            ScenarioAddressFamily::AfAlg => Self::AfAlg,
+            ScenarioAddressFamily::Other(value) => Self::Other(value),
+        }
+    }
+}
+
+impl From<ScenarioSocketType> for SocketType {
+    fn from(value: ScenarioSocketType) -> Self {
+        match value {
+            ScenarioSocketType::Stream => Self::Stream,
+            ScenarioSocketType::Datagram => Self::Datagram,
+            ScenarioSocketType::SeqPacket => Self::SeqPacket,
+            ScenarioSocketType::Other(value) => Self::Other(value),
+        }
+    }
+}
+
+impl From<ScenarioSocketProtocol> for SocketProtocol {
+    fn from(value: ScenarioSocketProtocol) -> Self {
+        match value {
+            ScenarioSocketProtocol::Default => Self::Default,
+            ScenarioSocketProtocol::Other(value) => Self::Other(value),
+        }
+    }
+}
+
+impl From<ScenarioSocketLevel> for SocketLevel {
+    fn from(value: ScenarioSocketLevel) -> Self {
+        match value {
+            ScenarioSocketLevel::SolAlg => Self::SolAlg,
+            ScenarioSocketLevel::Other(value) => Self::Other(value),
+        }
+    }
+}
+
+impl From<ScenarioSocketOption> for SocketOption {
+    fn from(value: ScenarioSocketOption) -> Self {
+        match value {
+            ScenarioSocketOption::AlgSetKey => Self::AlgSetKey,
+            ScenarioSocketOption::AlgSetAeadAssoclen => Self::AlgSetAeadAssoclen,
+            ScenarioSocketOption::AlgSetAeadAuthsize => Self::AlgSetAeadAuthsize,
+            ScenarioSocketOption::Other(value) => Self::Other(value),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use crate::events::{AddressFamily, Event, SocketLevel};
     use crate::policy::{DecisionKind, PolicyId};
     use crate::scenarios::ScenarioRunner;
 
-    use super::load_yaml_file;
+    use super::{load_yaml_file, load_yaml_str};
 
     #[test]
     fn loads_secret_exfil_yaml_and_replays_it() {
@@ -335,5 +492,58 @@ mod tests {
             PolicyId::SecretToNetwork
         );
         assert_eq!(outcome.explanations[0].path.len(), 4);
+    }
+
+    #[test]
+    fn loads_boundary_events_from_yaml() {
+        let scenario = load_yaml_str(
+            r#"
+name: copy_fail_boundary_events
+events:
+  - type: socket_create
+    process:
+      pid: 400
+      start_time: 3000
+    fd: 3
+    family: af_alg
+    socket_type: seq_packet
+    protocol: default
+    at: 1
+  - type: set_sock_opt
+    process:
+      pid: 400
+      start_time: 3000
+    fd: 3
+    level: sol_alg
+    option: alg_set_key
+    at: 2
+  - type: splice
+    process:
+      pid: 400
+      start_time: 3000
+    from_fd: 4
+    to_fd: 3
+    len: 4096
+    at: 3
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(scenario.events.len(), 3);
+        assert!(matches!(
+            &scenario.events[0].event,
+            Event::SocketCreate {
+                family: AddressFamily::AfAlg,
+                ..
+            }
+        ));
+        assert!(matches!(
+            &scenario.events[1].event,
+            Event::SetSockOpt {
+                level: SocketLevel::SolAlg,
+                ..
+            }
+        ));
+        assert!(matches!(&scenario.events[2].event, Event::Splice { .. }));
     }
 }
