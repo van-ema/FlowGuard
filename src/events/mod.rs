@@ -40,14 +40,18 @@ pub enum SocketProtocol {
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum SocketLevel {
+    // Linux SOL_ALG selects AF_ALG socket options for kernel crypto setup.
     SolAlg,
     Other(String),
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum SocketOption {
+    // ALG_SET_KEY provides the key material for keyed AF_ALG operations.
     AlgSetKey,
+    // ALG_SET_AEAD_ASSOCLEN configures associated-data length for AEAD ciphers.
     AlgSetAeadAssoclen,
+    // ALG_SET_AEAD_AUTHSIZE configures authentication tag length for AEAD ciphers.
     AlgSetAeadAuthsize,
     Other(String),
 }
