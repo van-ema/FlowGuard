@@ -176,6 +176,7 @@ fn policy_name(policy: PolicyId) -> &'static str {
         PolicyId::SecretToNetwork => "SecretToNetwork",
         PolicyId::PromptToShellWithoutApproval => "PromptToShellWithoutApproval",
         PolicyId::ExternalToExecutableWrite => "ExternalToExecutableWrite",
+        PolicyId::CopyFailAfAlgPattern => "CopyFailAfAlgPattern",
     }
 }
 

@@ -1,4 +1,4 @@
-use crate::events::ObservedEvent;
+use crate::events::{AddressFamily, Event, ObservedEvent};
 use crate::graph::{EdgeId, NodeId};
 use crate::labels::{Label, LabelState};
 
@@ -8,6 +8,7 @@ pub enum PolicyId {
     SecretToNetwork,
     PromptToShellWithoutApproval,
     ExternalToExecutableWrite,
+    CopyFailAfAlgPattern,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -59,6 +60,30 @@ pub fn check_secret_to_network(
             policy: PolicyId::SecretToNetwork,
             sink_event: sink_event.clone(),
             sink_edge: Some(sink_edge),
+        });
+    }
+
+    None
+}
+
+pub fn check_copy_fail_af_alg_pattern(
+    labels: &LabelState,
+    process_node: NodeId,
+    sink_event: &ObservedEvent,
+) -> Option<Violation> {
+    let Event::SocketCreate {
+        family: AddressFamily::AfAlg,
+        ..
+    } = &sink_event.event
+    else {
+        return None;
+    };
+
+    if labels.has_label(process_node, Label::Prompt) {
+        return Some(Violation {
+            policy: PolicyId::CopyFailAfAlgPattern,
+            sink_event: sink_event.clone(),
+            sink_edge: None,
         });
     }
 

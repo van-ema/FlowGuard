@@ -546,4 +546,25 @@ events:
         ));
         assert!(matches!(&scenario.events[2].event, Event::Splice { .. }));
     }
+
+    #[test]
+    fn copy_fail_yaml_blocks_af_alg_socket_create() {
+        let scenario = load_yaml_file("scenarios/copy_fail.yaml").unwrap();
+
+        let outcome = ScenarioRunner::new().run(&scenario);
+
+        assert_eq!(scenario.name, "copy_fail");
+        assert_eq!(outcome.enforcement.decision.kind, DecisionKind::Block);
+        assert_eq!(
+            outcome.enforcement.decision.violations[0].policy,
+            PolicyId::CopyFailAfAlgPattern
+        );
+        assert!(matches!(
+            &outcome.enforcement.decision.violations[0].sink_event.event,
+            Event::SocketCreate {
+                family: AddressFamily::AfAlg,
+                ..
+            }
+        ));
+    }
 }

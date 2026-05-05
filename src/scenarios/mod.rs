@@ -284,7 +284,16 @@ impl Replay {
                     self.blocked_event = Some(observed.clone());
                 }
             }
-            Event::SocketCreate { .. } => {}
+            Event::SocketCreate { process, .. } => {
+                let process_node = self.graph.process_node(process);
+
+                if let Some(violation) =
+                    policy::check_copy_fail_af_alg_pattern(&self.labels, process_node, observed)
+                {
+                    self.violations.push(violation);
+                    self.blocked_event = Some(observed.clone());
+                }
+            }
             Event::SetSockOpt { .. } => {}
             Event::Splice { .. } => {}
             Event::Exit { .. } => {}

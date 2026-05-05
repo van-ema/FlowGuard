@@ -1,0 +1,45 @@
+name: copy_fail
+events:
+  - type: agent_launch
+    process:
+      pid: 400
+      start_time: 3000
+    command:
+      - exploit-copy-fail
+    at: 1
+
+  - type: open
+    process:
+      pid: 400
+      start_time: 3000
+    fd: 4
+    path: /usr/bin/cat
+    at: 2
+
+  - type: socket_create
+    process:
+      pid: 400
+      start_time: 3000
+    fd: 3
+    family: af_alg
+    socket_type: seq_packet
+    protocol: default
+    at: 3
+
+  - type: set_sock_opt
+    process:
+      pid: 400
+      start_time: 3000
+    fd: 3
+    level: sol_alg
+    option: alg_set_key
+    at: 4
+
+  - type: splice
+    process:
+      pid: 400
+      start_time: 3000
+    from_fd: 4
+    to_fd: 3
+    len: 4096
+    at: 5
