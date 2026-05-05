@@ -567,4 +567,26 @@ events:
             }
         ));
     }
+
+    #[test]
+    fn benign_send_yaml_is_allowed() {
+        let scenario = load_yaml_file("scenarios/benign_send.yaml").unwrap();
+
+        let outcome = ScenarioRunner::new().run(&scenario);
+
+        assert_eq!(scenario.name, "benign_send");
+        assert_eq!(outcome.enforcement.decision.kind, DecisionKind::Allow);
+        assert!(outcome.enforcement.decision.violations.is_empty());
+    }
+
+    #[test]
+    fn benign_socket_yaml_is_allowed() {
+        let scenario = load_yaml_file("scenarios/benign_socket.yaml").unwrap();
+
+        let outcome = ScenarioRunner::new().run(&scenario);
+
+        assert_eq!(scenario.name, "benign_socket");
+        assert_eq!(outcome.enforcement.decision.kind, DecisionKind::Allow);
+        assert!(outcome.enforcement.decision.violations.is_empty());
+    }
 }

@@ -1,0 +1,20 @@
+name: benign_socket
+events:
+  - type: agent_launch
+    process:
+      pid: 600
+      start_time: 5000
+    command:
+      - network-client
+    at: 1
+
+  - type: socket_create
+    process:
+      pid: 600
+      start_time: 5000
+    fd: 3
+    family:
+      other: af_inet
+    socket_type: stream
+    protocol: default
+    at: 2

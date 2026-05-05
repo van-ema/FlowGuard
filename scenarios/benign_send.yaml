@@ -1,0 +1,86 @@
+name: benign_send
+events:
+  - type: agent_launch
+    process:
+      pid: 500
+      start_time: 4000
+    command:
+      - cat
+      - /tmp/public.txt
+    at: 1
+
+  - type: pipe
+    process:
+      pid: 500
+      start_time: 4000
+    pipe: 3
+    read_fd: 4
+    write_fd: 5
+    at: 2
+
+  - type: fork
+    parent:
+      pid: 500
+      start_time: 4000
+    child:
+      pid: 501
+      start_time: 4010
+    at: 3
+
+  - type: dup
+    process:
+      pid: 501
+      start_time: 4010
+    from_fd: 4
+    to_fd: 0
+    at: 4
+
+  - type: open
+    process:
+      pid: 500
+      start_time: 4000
+    fd: 3
+    path: /tmp/public.txt
+    at: 5
+
+  - type: read
+    process:
+      pid: 500
+      start_time: 4000
+    fd: 3
+    len: 128
+    at: 6
+
+  - type: write
+    process:
+      pid: 500
+      start_time: 4000
+    fd: 5
+    len: 128
+    at: 7
+
+  - type: read
+    process:
+      pid: 501
+      start_time: 4010
+    fd: 0
+    len: 128
+    at: 8
+
+  - type: connect
+    process:
+      pid: 501
+      start_time: 4010
+    fd: 6
+    endpoint:
+      host: example.com
+      port: 443
+    at: 9
+
+  - type: send
+    process:
+      pid: 501
+      start_time: 4010
+    fd: 6
+    len: 128
+    at: 10
