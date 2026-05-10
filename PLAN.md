@@ -45,12 +45,32 @@ Use these systems as reference points, not as architecture templates.
 - AppArmor, SELinux, Landlock, seccomp: practical confinement and syscall/file-access control layers.
 - gVisor and Firecracker: stronger sandbox substrates underneath Flowguard, not replacements for provenance.
 - CamFlow, SPADE, PASS: provenance systems worth studying for graph collection, storage, and querying.
+- AgentSentinel: closest agent-specific reference. Useful for computer-use-agent threat modeling, task-context-aware auditing, sensitive-operation suspension, and the BadComputerUse benchmark taxonomy. Flowguard should not copy its LLM-auditor-first design as the core decision path.
 
 Design stance:
 
 - Borrow telemetry ideas from Falco and Tracee.
 - Borrow enforcement ideas from Tetragon, KubeArmor, Landlock, seccomp, and BPF-LSM.
+- Borrow agent/task-context ideas and benchmark categories from AgentSentinel.
 - Keep Flowguard's graph, labels, policy decisions, and explanations as our own Rust core.
+
+## Flowguard Differentiation
+
+Compared with AgentSentinel, Flowguard should be provenance-first rather than audit-first.
+
+AgentSentinel is valuable because it protects computer-use agents in real time, suspends sensitive operations, and combines task context with system traces. The weakness for Flowguard's target is that an LLM-based auditor is still a nondeterministic decision component, and trace/task text can become part of the attack surface.
+
+Flowguard's improvement path:
+
+- deterministic core decisions from typed events, FD tables, provenance graph edges, labels, and explicit policy rules
+- reconstructable source-to-sink explanations for every violation
+- process identity based on PID plus start time, with full descendant tracking from the agent root
+- structured traces that treat command strings, paths, and file contents as metadata, not trusted policy instructions
+- approval and cache entries scoped by task id, process identity, sink object, policy id, label state, timestamp, and TTL
+- scenario-first regression tests for every policy and bug fix
+- optional LLM auditor only as a secondary triage layer, never as the only blocker for known dataflow policies
+
+This makes Flowguard stronger for high-confidence rules such as `SECRET -> SEND`, `EXTERNAL -> EXEC`, and sandbox escape primitives. LLM review can still help for ambiguous cases, but the MVP must demonstrate deterministic blocking without it.
 
 ## Enforcement Model
 
@@ -152,6 +172,10 @@ Scenario set:
 - agent writes cron/systemd/shell rc/SSH config -> persistence alert/block
 - dup/pipe/close chain across processes -> FD correctness
 - missing FD, unknown process, PID reuse -> structured warning and continued operation
+- malicious tool result poisons shell command -> `EXTERNAL -> EXEC`
+- malicious execution environment exposes host/runtime socket -> sandbox escape block
+- agent infrastructure attack tries to kill monitor or modify agent config -> infrastructure protection alert/block
+- task-context attack attempts to justify secret exfiltration -> deterministic `SECRET -> SEND` still blocks
 
 Policy behavior:
 
@@ -177,6 +201,8 @@ Normalizer requirements:
 - resolve process identity as PID plus start time
 - never guess FD mappings
 - surface inconsistent state as warnings
+- attach optional task/tool context without making it authoritative for dataflow correctness
+- enrich network endpoints with DNS resolution history when available
 
 ### Phase 4: Real Blocking
 
@@ -197,6 +223,111 @@ Mechanism order:
 - use BPF-LSM for lower-level blocking where available
 - use eBPF telemetry for observation and explanation, not as the only blocking layer
 
+## Agent Context Model
+
+Flowguard should add an optional context stream beside syscall events.
+
+Context events:
+
+- `TaskStart`: task id, user-visible task text hash, agent root process
+- `ToolUseStart`: task id, tool id, process identity, command/argv metadata
+- `ToolUseEnd`: task id, tool id, process identity, exit status
+- `AgentMessage`: task id, message hash and direction, not full prompt text by default
+- `ApprovalGranted`: scoped approval for one policy/action/sink
+
+Rules:
+
+- context can narrow explanations and approval scope
+- context cannot create provenance edges by itself
+- context cannot override deterministic blocks such as `SECRET -> SEND`
+- full task text should be optional and treated as untrusted metadata
+
+## Benchmark Strategy
+
+The MVP should not start by integrating a large external benchmark. First prove Flowguard's core claim with small deterministic scenarios, then map selected external benchmark cases into Flowguard scenario files.
+
+Benchmark order:
+
+1. Flowguard-owned scenario suite
+2. BadComputerUse-derived security slice
+3. AgentDojo prompt-injection and exfiltration cases
+4. AgentHazard long-horizon harmful-behavior cases
+5. OSWorld benign regression subset
+
+### Flowguard-Owned Scenarios
+
+These are the acceptance tests for the engine itself.
+
+Required MVP cases:
+
+- `SECRET -> SEND`: fake SSH key or `.env` data reaches network send
+- `EXTERNAL -> EXEC`: downloaded or received data reaches shell/script execution
+- `PROMPT -> shell without APPROVED`: agent launches interpreter without scoped approval
+- sandbox escape primitive: Docker socket, namespace switch, mount, ptrace, or BPF attempt
+- Copy Fail-style boundary abuse: unusual kernel boundary event such as `AF_ALG`
+- benign network send: public file or generated text reaches allowed endpoint
+- benign shell with approval: scoped approval suppresses only the intended shell policy
+
+Metrics:
+
+- policy id is deterministic
+- sink event is shown
+- source-to-sink explanation path is reconstructable
+- block happens at the sink that would complete the unsafe operation
+- paired benign scenario is allowed
+
+### BadComputerUse-Derived Slice
+
+BadComputerUse is useful for comparing against AgentSentinel, but it should be sampled rather than fully integrated for MVP.
+
+Convert 5-10 representative cases into `scenarios/*.yaml`:
+
+- malicious tool result causes `curl | bash`
+- agent reads `.ssh/id_rsa` and exfiltrates it
+- agent reads `.env` or API key material and sends it externally
+- malicious execution environment exposes a runtime socket
+- agent infrastructure attack tries to kill or modify the monitor
+- task-context attack attempts to justify secret exfiltration
+- benign equivalent for each high-risk behavior where possible
+
+Flowguard result should report:
+
+- block/allow decision
+- policy id
+- sink event
+- explanation path
+- whether task/tool context was present but non-authoritative
+
+### AgentDojo
+
+AgentDojo is better for indirect prompt injection and malicious tool-output scenarios. Use it after the Flowguard-owned and BadComputerUse-derived cases pass.
+
+Good candidates:
+
+- untrusted email/document/web result asks agent to leak private data
+- tool result changes intended command
+- external observation causes unsafe file or network action
+
+Flowguard value:
+
+- the model may be tricked, but `SECRET -> SEND` and `EXTERNAL -> EXEC` still block from provenance state
+
+### AgentHazard
+
+AgentHazard is useful later for long-horizon composition where individual actions look locally acceptable. It is too large for the first MVP.
+
+Use after task/tool context exists:
+
+- multi-turn secret collection then exfiltration
+- repeated benign-looking writes that create persistence
+- accumulated context that leads to sandbox escape
+
+### OSWorld
+
+OSWorld is not a security benchmark, but it is useful for false-positive checks after live or live-ish integration.
+
+Use a small benign subset to ensure Flowguard does not block normal desktop/agent workflows unless a policy-relevant dataflow occurs.
+
 ## Module Ownership
 
 - `events`: observed domain events only
@@ -212,12 +343,14 @@ Keep these responsibilities separate. `scenarios` may orchestrate but must not o
 
 ## Immediate Next Steps
 
-1. Build the secret-exfiltration MVP demo.
-2. Add `CONNECT` edge creation and tests.
-3. Replace replay panics with structured warnings while keeping tests strict.
+1. Add `CONNECT` edge creation and tests.
+2. Add the MVP Flowguard-owned benchmark scenarios as replay YAML files.
+3. Add task/tool context events to the scenario format without affecting provenance correctness.
 4. Add `Prompt -> Shell without approval` scenario and policy.
-5. Add config object for secret paths, interpreters, executable locations, blocked paths, and network allowlists.
-6. Update `docs/design.md` to match this prevention-first architecture.
+5. Convert 5-10 BadComputerUse-derived cases into Flowguard scenario YAML.
+6. Replace replay panics with structured warnings while keeping tests strict.
+7. Add config object for secret paths, interpreters, executable locations, blocked paths, and network allowlists.
+8. Update `docs/design.md` to match this prevention-first architecture and AgentSentinel comparison.
 
 ## MVP Demo Plan
 

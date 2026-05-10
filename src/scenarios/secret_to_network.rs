@@ -87,13 +87,20 @@ mod tests {
 
         let outcome = ScenarioRunner::new().run(&scenario);
 
-        assert_eq!(outcome.graph.edges.len(), 5);
+        assert_eq!(outcome.graph.edges.len(), 6);
         assert!(
             outcome
                 .graph
                 .edges
                 .iter()
                 .any(|edge| edge.kind == EdgeKind::Send)
+        );
+        assert!(
+            outcome
+                .graph
+                .edges
+                .iter()
+                .any(|edge| edge.kind == EdgeKind::Connect)
         );
         assert_eq!(outcome.enforcement.decision.kind, DecisionKind::Block);
         assert_eq!(outcome.enforcement.decision.violations.len(), 1);

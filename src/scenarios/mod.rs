@@ -209,9 +209,18 @@ impl Replay {
                 process,
                 fd,
                 endpoint,
-                ..
+                at,
             } => {
                 self.runtime.connect_socket(process, *fd, endpoint.clone());
+                let process_node = self.graph.process_node(process);
+                let endpoint_node = self.graph.endpoint_node(endpoint.clone());
+                self.graph.append_edge(
+                    process_node,
+                    endpoint_node,
+                    EdgeKind::Connect,
+                    *at,
+                    observed.sequence,
+                );
             }
             Event::Recv {
                 process, fd, at, ..
@@ -317,4 +326,53 @@ impl Replay {
 
 fn is_secret_path(path: &std::path::Path) -> bool {
     path.starts_with("/home/user/.ssh")
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::events::{Endpoint, Event, Fd, ProcessId, StartTime, Timestamp};
+    use crate::graph::{EdgeKind, Node};
+    use crate::policy::DecisionKind;
+
+    use super::{Scenario, ScenarioRunner};
+
+    #[test]
+    fn connect_records_process_to_endpoint_edge_without_label_propagation() {
+        let process = ProcessId::new(42, StartTime(100));
+        let endpoint = Endpoint::tcp("example.test", 443);
+        let scenario = Scenario::new(
+            "connect_edge",
+            vec![
+                Event::AgentLaunch {
+                    process: process.clone(),
+                    command: vec!["curl".into(), "https://example.test".into()],
+                    at: Timestamp(1),
+                },
+                Event::Connect {
+                    process: process.clone(),
+                    fd: Fd(3),
+                    endpoint: endpoint.clone(),
+                    at: Timestamp(2),
+                },
+            ],
+        );
+
+        let outcome = ScenarioRunner::new().run(&scenario);
+
+        assert_eq!(outcome.enforcement.decision.kind, DecisionKind::Allow);
+        assert_eq!(outcome.graph.edges.len(), 1);
+
+        let edge = &outcome.graph.edges[0];
+        assert_eq!(edge.kind, EdgeKind::Connect);
+        assert_eq!(edge.at, Timestamp(2));
+        assert_eq!(edge.event_sequence, 1);
+        assert_eq!(
+            outcome.graph.nodes.get(&edge.from),
+            Some(&Node::Process(process))
+        );
+        assert_eq!(
+            outcome.graph.nodes.get(&edge.to),
+            Some(&Node::Endpoint(endpoint))
+        );
+    }
 }

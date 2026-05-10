@@ -2,6 +2,47 @@
 
 Flowguard combines ideas from whole-system provenance, runtime security detection, Linux sandboxing, and agent safety. The goal is not to clone any one project. The goal is to build an agent-focused provenance and enforcement engine with deterministic policy decisions and reconstructable explanations.
 
+## AgentSentinel
+
+AgentSentinel is the closest agent-specific reference system. It targets computer-use agents, instruments agent execution, traces sensitive process/file/network operations, suspends risky operations, and audits them using task context plus system traces.
+
+Reference:
+
+- paper: AgentSentinel: An End-to-End and Real-Time Security Defense Framework for Computer-Use Agents, arXiv:2509.07764
+- implementation: https://github.com/m4p1e/agent-sentinel
+
+What Flowguard should reuse:
+
+- endpoint-first threat model for computer-use agents
+- separation between agent-side instrumentation and an external monitor
+- sensitive-operation suspension before allowing execution to continue
+- task-context awareness: current task, tool invocation, command, and action history
+- scenario categories from BadComputerUse: direct task injection, agent infrastructure attack, malicious tool result, malicious execution environment, backdoor, and hallucination exploitation
+- DNS/context enrichment for network events, so socket endpoints can be mapped back to domains when possible
+- adaptive-attack lessons: defender killing, toxic task context, toxic traces, and cache poisoning
+
+What Flowguard should not reuse directly:
+
+- do not make LLM auditing the root policy engine
+- do not rely on natural-language trace summaries for correctness
+- do not make a safe-operation cache valid without provenance state, task id, process identity, sink, and TTL
+- do not use process-depth thresholds that can miss malicious child processes
+
+How Flowguard can improve over it:
+
+- deterministic first: policy decisions come from typed events, FD state, labels, and graph paths before any LLM audit is considered
+- stronger explanations: every violation must include a source-to-sink provenance path, not only an audit verdict
+- lower trace-poisoning risk: traces are structured domain events; untrusted command strings and file contents are metadata, not executable policy text
+- better child-process coverage: Flowguard should track the whole descendant tree from the agent root using PID plus start time
+- tighter approval/cache semantics: approvals are scoped to identity, action, sink, label state, and time instead of broad task-level trust
+- replayable correctness: every detection should have deterministic scenario files and CLI regression tests
+
+Possible future integration:
+
+```text
+Agent/task context -> Flowguard normalizer -> graph -> labels -> policy -> explanation
+```
+
 ## CamFlow
 
 CamFlow is the closest conceptual match. It captures whole-system provenance through Linux hooks such as LSM and NetFilter and can represent process, file, and network causality as a provenance graph.
