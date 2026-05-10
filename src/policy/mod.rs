@@ -95,6 +95,28 @@ pub fn check_prompt_to_shell_without_approval(
     None
 }
 
+pub fn check_external_to_executable_write(
+    labels: &LabelState,
+    file_node: NodeId,
+    path: &Path,
+    sink_event: &ObservedEvent,
+    sink_edge: EdgeId,
+) -> Option<Violation> {
+    if !matches!(sink_event.event, Event::Write { .. }) {
+        return None;
+    }
+
+    if labels.has_label(file_node, Label::External) && is_executable_path(path) {
+        return Some(Violation {
+            policy: PolicyId::ExternalToExecutableWrite,
+            sink_event: sink_event.clone(),
+            sink_edge: Some(sink_edge),
+        });
+    }
+
+    None
+}
+
 pub fn check_copy_fail_af_alg_pattern(
     labels: &LabelState,
     process_node: NodeId,
@@ -117,6 +139,15 @@ pub fn check_copy_fail_af_alg_pattern(
     }
 
     None
+}
+
+fn is_executable_path(path: &Path) -> bool {
+    path.starts_with("/bin")
+        || path.starts_with("/sbin")
+        || path.starts_with("/usr/bin")
+        || path.starts_with("/usr/sbin")
+        || path.starts_with("/usr/local/bin")
+        || path.starts_with("/usr/local/sbin")
 }
 
 fn is_shell_or_interpreter(program: &Path, argv: &[String]) -> bool {

@@ -1,0 +1,44 @@
+name: benign_external_download
+events:
+  - type: agent_launch
+    process:
+      pid: 730
+      start_time: 6300
+    command:
+      - agent
+      - download-note
+    at: 1
+
+  - type: connect
+    process:
+      pid: 730
+      start_time: 6300
+    fd: 3
+    endpoint:
+      host: example.com
+      port: 443
+    at: 2
+
+  - type: recv
+    process:
+      pid: 730
+      start_time: 6300
+    fd: 3
+    len: 128
+    at: 3
+
+  - type: open
+    process:
+      pid: 730
+      start_time: 6300
+    fd: 4
+    path: /tmp/download.txt
+    at: 4
+
+  - type: write
+    process:
+      pid: 730
+      start_time: 6300
+    fd: 4
+    len: 128
+    at: 5

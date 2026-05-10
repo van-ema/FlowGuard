@@ -221,6 +221,26 @@ impl Replay {
                 );
                 self.labels
                     .propagate_all(process_node, object_node, edge_id);
+
+                if let RuntimeObject::File { path } = &object {
+                    if let Some(violation) = policy::check_external_to_executable_write(
+                        &self.labels,
+                        object_node,
+                        path,
+                        observed,
+                        edge_id,
+                    ) {
+                        self.explanations.push(explain::for_label(
+                            violation.policy,
+                            object_node,
+                            Label::External,
+                            &self.labels,
+                            &self.graph,
+                        ));
+                        self.violations.push(violation);
+                        self.blocked_event = Some(observed.clone());
+                    }
+                }
             }
             Event::Connect {
                 process,

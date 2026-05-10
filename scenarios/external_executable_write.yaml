@@ -1,0 +1,44 @@
+name: external_executable_write
+events:
+  - type: agent_launch
+    process:
+      pid: 720
+      start_time: 6200
+    command:
+      - agent
+      - install-tool
+    at: 1
+
+  - type: connect
+    process:
+      pid: 720
+      start_time: 6200
+    fd: 3
+    endpoint:
+      host: downloads.evil.example
+      port: 443
+    at: 2
+
+  - type: recv
+    process:
+      pid: 720
+      start_time: 6200
+    fd: 3
+    len: 512
+    at: 3
+
+  - type: open
+    process:
+      pid: 720
+      start_time: 6200
+    fd: 4
+    path: /usr/local/bin/agent-helper
+    at: 4
+
+  - type: write
+    process:
+      pid: 720
+      start_time: 6200
+    fd: 4
+    len: 512
+    at: 5

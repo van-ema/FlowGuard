@@ -59,6 +59,20 @@ fn replay_prompt_shell_blocks_without_approval() {
 }
 
 #[test]
+fn replay_external_executable_write_blocks_with_explanation() {
+    let output = flowguard_replay("scenarios/external_executable_write.yaml");
+    let stdout = stdout(&output);
+
+    assert_eq!(output.status.code(), Some(1), "stderr: {}", stderr(&output));
+    assert!(stdout.contains("BLOCK ExternalToExecutableWrite"));
+    assert!(stdout.contains("sink:"));
+    assert!(stdout.contains("WRITE proc:720@6200 fd:4 len:512"));
+    assert!(stdout.contains("why:"));
+    assert!(stdout.contains("endpoint:downloads.evil.example:443 --RECV--> proc:720@6200"));
+    assert!(stdout.contains("proc:720@6200 --WRITE--> file:/usr/local/bin/agent-helper"));
+}
+
+#[test]
 fn replay_benign_send_allows() {
     let output = flowguard_replay("scenarios/benign_send.yaml");
 
@@ -69,6 +83,14 @@ fn replay_benign_send_allows() {
 #[test]
 fn replay_prompt_shell_approved_allows() {
     let output = flowguard_replay("scenarios/prompt_shell_approved.yaml");
+
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "ALLOW\n");
+}
+
+#[test]
+fn replay_benign_external_download_allows() {
+    let output = flowguard_replay("scenarios/benign_external_download.yaml");
 
     assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
     assert_eq!(stdout(&output), "ALLOW\n");

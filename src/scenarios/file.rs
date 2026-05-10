@@ -599,6 +599,36 @@ events:
     }
 
     #[test]
+    fn external_executable_write_yaml_blocks() {
+        let scenario = load_yaml_file("scenarios/external_executable_write.yaml").unwrap();
+
+        let outcome = ScenarioRunner::new().run(&scenario);
+
+        assert_eq!(scenario.name, "external_executable_write");
+        assert_eq!(outcome.enforcement.decision.kind, DecisionKind::Block);
+        assert_eq!(
+            outcome.enforcement.decision.violations[0].policy,
+            PolicyId::ExternalToExecutableWrite
+        );
+        assert!(matches!(
+            &outcome.enforcement.decision.violations[0].sink_event.event,
+            Event::Write { process, fd, .. } if process.pid == 720 && fd.0 == 4
+        ));
+        assert_eq!(outcome.explanations[0].path.len(), 2);
+    }
+
+    #[test]
+    fn benign_external_download_yaml_is_allowed() {
+        let scenario = load_yaml_file("scenarios/benign_external_download.yaml").unwrap();
+
+        let outcome = ScenarioRunner::new().run(&scenario);
+
+        assert_eq!(scenario.name, "benign_external_download");
+        assert_eq!(outcome.enforcement.decision.kind, DecisionKind::Allow);
+        assert!(outcome.enforcement.decision.violations.is_empty());
+    }
+
+    #[test]
     fn benign_send_yaml_is_allowed() {
         let scenario = load_yaml_file("scenarios/benign_send.yaml").unwrap();
 
