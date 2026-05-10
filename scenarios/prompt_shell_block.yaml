@@ -1,0 +1,24 @@
+name: prompt_shell_block
+events:
+  - type: agent_launch
+    process:
+      pid: 700
+      start_time: 6000
+    command:
+      - agent
+      - run-shell-task
+    at: 1
+
+  - type: exec
+    parent:
+      pid: 700
+      start_time: 6000
+    child:
+      pid: 701
+      start_time: 6010
+    program: /bin/bash
+    argv:
+      - bash
+      - -c
+      - echo unsafe
+    at: 2

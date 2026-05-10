@@ -1,0 +1,31 @@
+name: prompt_shell_approved
+events:
+  - type: agent_launch
+    process:
+      pid: 710
+      start_time: 6100
+    command:
+      - agent
+      - run-approved-shell-task
+    at: 1
+
+  - type: approval_granted
+    process:
+      pid: 710
+      start_time: 6100
+    reason: user approved one shell command
+    at: 2
+
+  - type: exec
+    parent:
+      pid: 710
+      start_time: 6100
+    child:
+      pid: 711
+      start_time: 6110
+    program: /bin/bash
+    argv:
+      - bash
+      - -c
+      - echo approved
+    at: 3

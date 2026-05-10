@@ -46,8 +46,29 @@ fn replay_copy_fail_blocks_af_alg_socket() {
 }
 
 #[test]
+fn replay_prompt_shell_blocks_without_approval() {
+    let output = flowguard_replay("scenarios/prompt_shell_block.yaml");
+    let stdout = stdout(&output);
+
+    assert_eq!(output.status.code(), Some(1), "stderr: {}", stderr(&output));
+    assert!(stdout.contains("BLOCK PromptToShellWithoutApproval"));
+    assert!(stdout.contains("sink:"));
+    assert!(stdout.contains("EXEC proc:700@6000 program:/bin/bash"));
+    assert!(stdout.contains("why:"));
+    assert!(stdout.contains("proc:700@6000 --EXEC--> proc:701@6010"));
+}
+
+#[test]
 fn replay_benign_send_allows() {
     let output = flowguard_replay("scenarios/benign_send.yaml");
+
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "ALLOW\n");
+}
+
+#[test]
+fn replay_prompt_shell_approved_allows() {
+    let output = flowguard_replay("scenarios/prompt_shell_approved.yaml");
 
     assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
     assert_eq!(stdout(&output), "ALLOW\n");

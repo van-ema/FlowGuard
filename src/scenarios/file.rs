@@ -569,6 +569,36 @@ events:
     }
 
     #[test]
+    fn prompt_shell_yaml_blocks_without_approval() {
+        let scenario = load_yaml_file("scenarios/prompt_shell_block.yaml").unwrap();
+
+        let outcome = ScenarioRunner::new().run(&scenario);
+
+        assert_eq!(scenario.name, "prompt_shell_block");
+        assert_eq!(outcome.enforcement.decision.kind, DecisionKind::Block);
+        assert_eq!(
+            outcome.enforcement.decision.violations[0].policy,
+            PolicyId::PromptToShellWithoutApproval
+        );
+        assert!(matches!(
+            &outcome.enforcement.decision.violations[0].sink_event.event,
+            Event::Exec { program, .. } if program == &std::path::PathBuf::from("/bin/bash")
+        ));
+        assert_eq!(outcome.explanations[0].path.len(), 1);
+    }
+
+    #[test]
+    fn prompt_shell_yaml_allows_scoped_approval() {
+        let scenario = load_yaml_file("scenarios/prompt_shell_approved.yaml").unwrap();
+
+        let outcome = ScenarioRunner::new().run(&scenario);
+
+        assert_eq!(scenario.name, "prompt_shell_approved");
+        assert_eq!(outcome.enforcement.decision.kind, DecisionKind::Allow);
+        assert!(outcome.enforcement.decision.violations.is_empty());
+    }
+
+    #[test]
     fn benign_send_yaml_is_allowed() {
         let scenario = load_yaml_file("scenarios/benign_send.yaml").unwrap();
 

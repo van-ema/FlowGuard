@@ -99,12 +99,21 @@ mod tests {
                 .any(|edge| edge.kind == EdgeKind::Connect)
         );
         assert_eq!(outcome.enforcement.decision.kind, DecisionKind::Block);
-        assert_eq!(outcome.enforcement.decision.violations.len(), 1);
+        let policies: Vec<_> = outcome
+            .enforcement
+            .decision
+            .violations
+            .iter()
+            .map(|violation| violation.policy)
+            .collect();
         assert_eq!(
-            outcome.enforcement.decision.violations[0].policy,
-            PolicyId::ExternalToExec
+            policies,
+            vec![
+                PolicyId::ExternalToExec,
+                PolicyId::PromptToShellWithoutApproval,
+            ]
         );
-        assert_eq!(outcome.explanations.len(), 1);
+        assert_eq!(outcome.explanations.len(), 2);
         assert_eq!(outcome.explanations[0].path.len(), 4);
     }
 }

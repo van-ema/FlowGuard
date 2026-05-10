@@ -129,6 +129,23 @@ impl Replay {
                     self.violations.push(violation);
                     self.blocked_event = Some(observed.clone());
                 }
+
+                if let Some(violation) = policy::check_prompt_to_shell_without_approval(
+                    &self.labels,
+                    child_node,
+                    observed,
+                    edge_id,
+                ) {
+                    self.explanations.push(explain::for_label(
+                        violation.policy,
+                        child_node,
+                        Label::Prompt,
+                        &self.labels,
+                        &self.graph,
+                    ));
+                    self.violations.push(violation);
+                    self.blocked_event = Some(observed.clone());
+                }
             }
             Event::Open {
                 process, fd, path, ..
