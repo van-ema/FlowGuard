@@ -116,6 +116,17 @@ fn replay_benign_tmp_socket_file_allows() {
 }
 
 #[test]
+fn replay_malformed_missing_fd_warns_and_continues() {
+    let output = flowguard_replay("scenarios/malformed_missing_fd.yaml");
+    let stderr = stderr(&output);
+
+    assert_eq!(output.status.code(), Some(0), "stderr: {stderr}");
+    assert_eq!(stdout(&output), "ALLOW\n");
+    assert!(stderr.contains("warning: sequence:1 kind:MissingFd"));
+    assert!(stderr.contains("missing fd mapping"));
+}
+
+#[test]
 fn replay_benign_socket_allows() {
     let output = flowguard_replay("scenarios/benign_socket.yaml");
 

@@ -1,5 +1,5 @@
 use crate::enforce::EnforcementOutcome;
-use crate::events::{Event, ObservedEvent};
+use crate::events::{Event, Fd, ObservedEvent, ProcessId, SocketId};
 use crate::explain::{self, Explanation};
 use crate::graph::{EdgeKind, ProvenanceGraph};
 use crate::labels::{Label, LabelState};
@@ -41,6 +41,23 @@ pub struct ScenarioOutcome {
     pub labels: LabelState,
     pub enforcement: EnforcementOutcome,
     pub explanations: Vec<Explanation>,
+    pub warnings: Vec<ReplayWarning>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReplayWarning {
+    pub sequence: u64,
+    pub kind: ReplayWarningKind,
+    pub message: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReplayWarningKind {
+    UnknownProcess,
+    MissingFd,
+    NonSocketFd,
+    MissingSocketEndpoint,
+    InconsistentState,
 }
 
 pub struct ScenarioRunner;
@@ -68,6 +85,7 @@ struct Replay {
     labels: LabelState,
     explanations: Vec<Explanation>,
     violations: Vec<Violation>,
+    warnings: Vec<ReplayWarning>,
     blocked_event: Option<ObservedEvent>,
 }
 
@@ -85,9 +103,10 @@ impl Replay {
                 self.labels.seed(process_node, Label::Approved);
             }
             Event::Fork { parent, child, at } => {
-                self.runtime
-                    .fork_process(parent, child)
-                    .unwrap_or_else(|err| panic!("{err}"));
+                if let Err(err) = self.runtime.fork_process(parent, child) {
+                    self.warn_state_error(observed, err);
+                    return;
+                }
                 let parent_node = self.graph.process_node(parent);
                 let child_node = self.graph.process_node(child);
                 let edge_id = self.graph.append_edge(
@@ -102,9 +121,10 @@ impl Replay {
             Event::Exec {
                 parent, child, at, ..
             } => {
-                self.runtime
-                    .exec_process(parent, child)
-                    .unwrap_or_else(|err| panic!("{err}"));
+                if let Err(err) = self.runtime.exec_process(parent, child) {
+                    self.warn_state_error(observed, err);
+                    return;
+                }
                 let parent_node = self.graph.process_node(parent);
                 let child_node = self.graph.process_node(child);
                 let edge_id = self.graph.append_edge(
@@ -191,24 +211,22 @@ impl Replay {
                 to_fd,
                 ..
             } => {
-                self.runtime
-                    .dup_fd(process, *from_fd, *to_fd)
-                    .unwrap_or_else(|err| panic!("{err}"));
+                if let Err(err) = self.runtime.dup_fd(process, *from_fd, *to_fd) {
+                    self.warn_state_error(observed, err);
+                }
             }
             Event::Close { process, fd, .. } => {
-                self.runtime
-                    .close_fd(process, *fd)
-                    .unwrap_or_else(|err| panic!("{err}"));
+                if let Err(err) = self.runtime.close_fd(process, *fd) {
+                    self.warn_state_error(observed, err);
+                }
             }
             Event::Read {
                 process, fd, at, ..
             } => {
+                let Some(object) = self.lookup_fd(observed, process, *fd) else {
+                    return;
+                };
                 let process_node = self.graph.process_node(process);
-                let object = self
-                    .runtime
-                    .lookup_fd(process, *fd)
-                    .unwrap_or_else(|err| panic!("{err}"))
-                    .clone();
                 let object_node = self.graph.runtime_object_node(&object);
                 let edge_id = self.graph.append_edge(
                     object_node,
@@ -223,12 +241,10 @@ impl Replay {
             Event::Write {
                 process, fd, at, ..
             } => {
+                let Some(object) = self.lookup_fd(observed, process, *fd) else {
+                    return;
+                };
                 let process_node = self.graph.process_node(process);
-                let object = self
-                    .runtime
-                    .lookup_fd(process, *fd)
-                    .unwrap_or_else(|err| panic!("{err}"))
-                    .clone();
                 let object_node = self.graph.runtime_object_node(&object);
                 let edge_id = self.graph.append_edge(
                     process_node,
@@ -280,20 +296,16 @@ impl Replay {
             Event::Recv {
                 process, fd, at, ..
             } => {
-                let process_node = self.graph.process_node(process);
-                let object = self
-                    .runtime
-                    .lookup_fd(process, *fd)
-                    .unwrap_or_else(|err| panic!("{err}"));
-                let socket_id = match object {
-                    RuntimeObject::Socket { socket } => *socket,
-                    other => panic!("recv on non-socket fd: {:?} {:?}", process, other),
+                let Some(object) = self.lookup_fd(observed, process, *fd) else {
+                    return;
                 };
-                let endpoint = self
-                    .runtime
-                    .socket_endpoint(socket_id)
-                    .unwrap_or_else(|err| panic!("{err}"))
-                    .clone();
+                let Some(socket_id) = self.socket_id_for_fd(observed, process, *fd, &object) else {
+                    return;
+                };
+                let Some(endpoint) = self.socket_endpoint(observed, socket_id) else {
+                    return;
+                };
+                let process_node = self.graph.process_node(process);
                 let endpoint_node = self.graph.endpoint_node(endpoint);
                 self.labels.seed(endpoint_node, Label::External);
                 let edge_id = self.graph.append_edge(
@@ -309,20 +321,16 @@ impl Replay {
             Event::Send {
                 process, fd, at, ..
             } => {
-                let process_node = self.graph.process_node(process);
-                let object = self
-                    .runtime
-                    .lookup_fd(process, *fd)
-                    .unwrap_or_else(|err| panic!("{err}"));
-                let socket_id = match object {
-                    RuntimeObject::Socket { socket } => *socket,
-                    other => panic!("send on non-socket fd: {:?} {:?}", process, other),
+                let Some(object) = self.lookup_fd(observed, process, *fd) else {
+                    return;
                 };
-                let endpoint = self
-                    .runtime
-                    .socket_endpoint(socket_id)
-                    .unwrap_or_else(|err| panic!("{err}"))
-                    .clone();
+                let Some(socket_id) = self.socket_id_for_fd(observed, process, *fd, &object) else {
+                    return;
+                };
+                let Some(endpoint) = self.socket_endpoint(observed, socket_id) else {
+                    return;
+                };
+                let process_node = self.graph.process_node(process);
                 let endpoint_node = self.graph.endpoint_node(endpoint);
                 let edge_id = self.graph.append_edge(
                     process_node,
@@ -364,6 +372,67 @@ impl Replay {
         }
     }
 
+    fn lookup_fd(
+        &mut self,
+        observed: &ObservedEvent,
+        process: &ProcessId,
+        fd: Fd,
+    ) -> Option<RuntimeObject> {
+        match self.runtime.lookup_fd(process, fd) {
+            Ok(object) => Some(object.clone()),
+            Err(err) => {
+                self.warn_state_error(observed, err);
+                None
+            }
+        }
+    }
+
+    fn socket_id_for_fd(
+        &mut self,
+        observed: &ObservedEvent,
+        process: &ProcessId,
+        fd: Fd,
+        object: &RuntimeObject,
+    ) -> Option<SocketId> {
+        match object {
+            RuntimeObject::Socket { socket } => Some(*socket),
+            other => {
+                self.warn(
+                    observed,
+                    ReplayWarningKind::NonSocketFd,
+                    format!("socket operation on non-socket fd: {process:?} {fd:?} {other:?}"),
+                );
+                None
+            }
+        }
+    }
+
+    fn socket_endpoint(
+        &mut self,
+        observed: &ObservedEvent,
+        socket: SocketId,
+    ) -> Option<crate::events::Endpoint> {
+        match self.runtime.socket_endpoint(socket) {
+            Ok(endpoint) => Some(endpoint.clone()),
+            Err(err) => {
+                self.warn_state_error(observed, err);
+                None
+            }
+        }
+    }
+
+    fn warn_state_error(&mut self, observed: &ObservedEvent, message: String) {
+        self.warn(observed, classify_state_error(&message), message);
+    }
+
+    fn warn(&mut self, observed: &ObservedEvent, kind: ReplayWarningKind, message: String) {
+        self.warnings.push(ReplayWarning {
+            sequence: observed.sequence,
+            kind,
+            message,
+        });
+    }
+
     fn finish(self) -> ScenarioOutcome {
         let decision = policy::decide(self.violations);
         ScenarioOutcome {
@@ -375,7 +444,20 @@ impl Replay {
                 blocked_event: self.blocked_event,
             },
             explanations: self.explanations,
+            warnings: self.warnings,
         }
+    }
+}
+
+fn classify_state_error(message: &str) -> ReplayWarningKind {
+    if message.starts_with("unknown") {
+        ReplayWarningKind::UnknownProcess
+    } else if message.contains("missing") && message.contains("fd") {
+        ReplayWarningKind::MissingFd
+    } else if message.contains("missing endpoint") {
+        ReplayWarningKind::MissingSocketEndpoint
+    } else {
+        ReplayWarningKind::InconsistentState
     }
 }
 

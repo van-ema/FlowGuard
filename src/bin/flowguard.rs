@@ -5,7 +5,7 @@ use flowguard::events::{Event, ObservedEvent};
 use flowguard::graph::{EdgeKind, Node, ProvenanceGraph};
 use flowguard::policy::{DecisionKind, PolicyId};
 use flowguard::scenarios::file::load_yaml_file;
-use flowguard::scenarios::{ScenarioOutcome, ScenarioRunner};
+use flowguard::scenarios::{ReplayWarning, ScenarioOutcome, ScenarioRunner};
 
 fn main() -> ExitCode {
     match run() {
@@ -31,6 +31,7 @@ fn run() -> Result<ExitCode, String> {
             let scenario = load_yaml_file(&scenario_path).map_err(|err| err.to_string())?;
             let outcome = ScenarioRunner::new().run(&scenario);
             print_replay_outcome(&outcome);
+            print_replay_warnings(&outcome);
 
             if outcome.enforcement.decision.kind == DecisionKind::Block {
                 Ok(ExitCode::from(1))
@@ -79,6 +80,19 @@ fn print_replay_outcome(outcome: &ScenarioOutcome) {
         }
         None => println!("{}", decision_kind_name(decision.kind)),
     }
+}
+
+fn print_replay_warnings(outcome: &ScenarioOutcome) {
+    for warning in &outcome.warnings {
+        eprintln!("warning: {}", format_warning(warning));
+    }
+}
+
+fn format_warning(warning: &ReplayWarning) -> String {
+    format!(
+        "sequence:{} kind:{:?} message:{}",
+        warning.sequence, warning.kind, warning.message
+    )
 }
 
 fn format_observed_event(observed: &ObservedEvent) -> String {

@@ -1,0 +1,18 @@
+name: malformed_missing_fd
+events:
+  - type: agent_launch
+    process:
+      pid: 760
+      start_time: 6600
+    command:
+      - agent
+      - malformed-trace
+    at: 1
+
+  - type: read
+    process:
+      pid: 760
+      start_time: 6600
+    fd: 99
+    len: 64
+    at: 2

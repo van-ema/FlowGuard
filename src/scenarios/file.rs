@@ -475,6 +475,7 @@ impl From<ScenarioSocketOption> for SocketOption {
 mod tests {
     use crate::events::{AddressFamily, Event, SocketLevel};
     use crate::policy::{DecisionKind, PolicyId};
+    use crate::scenarios::ReplayWarningKind;
     use crate::scenarios::ScenarioRunner;
 
     use super::{load_yaml_file, load_yaml_str};
@@ -656,6 +657,23 @@ events:
         assert_eq!(scenario.name, "benign_tmp_socket_file");
         assert_eq!(outcome.enforcement.decision.kind, DecisionKind::Allow);
         assert!(outcome.enforcement.decision.violations.is_empty());
+    }
+
+    #[test]
+    fn malformed_missing_fd_yaml_warns_and_continues() {
+        let scenario = load_yaml_file("scenarios/malformed_missing_fd.yaml").unwrap();
+
+        let outcome = ScenarioRunner::new().run(&scenario);
+
+        assert_eq!(scenario.name, "malformed_missing_fd");
+        assert_eq!(outcome.enforcement.decision.kind, DecisionKind::Allow);
+        assert!(outcome.enforcement.decision.violations.is_empty());
+        assert!(outcome.graph.edges.is_empty());
+        assert_eq!(outcome.graph.nodes.len(), 1);
+        assert_eq!(outcome.warnings.len(), 1);
+        assert_eq!(outcome.warnings[0].sequence, 1);
+        assert_eq!(outcome.warnings[0].kind, ReplayWarningKind::MissingFd);
+        assert!(outcome.warnings[0].message.contains("missing fd mapping"));
     }
 
     #[test]
