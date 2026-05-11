@@ -3,6 +3,7 @@ pub mod events;
 pub mod explain;
 pub mod graph;
 pub mod labels;
+pub mod observability;
 pub mod policy;
 pub mod scenarios;
 pub mod state;

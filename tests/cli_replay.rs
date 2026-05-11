@@ -1,11 +1,14 @@
 use std::process::{Command, Output};
 
-fn flowguard_replay(path: &str) -> Output {
+fn flowguard_replay_args(args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_flowguard"))
-        .arg("replay")
-        .arg(path)
+        .args(args)
         .output()
-        .expect("failed to run flowguard replay")
+        .expect("failed to run flowguard")
+}
+
+fn flowguard_replay(path: &str) -> Output {
+    flowguard_replay_args(&["replay", path])
 }
 
 fn stdout(output: &Output) -> String {
@@ -28,6 +31,36 @@ fn replay_secret_exfil_blocks_with_explanation() {
     assert!(stdout.contains("why:"));
     assert!(stdout.contains("file:/home/user/.ssh/id_rsa --READ--> proc:300@2000"));
     assert!(stdout.contains("proc:301@2010 --SEND--> endpoint:evil.example:443"));
+}
+
+#[test]
+fn replay_secret_exfil_json_includes_observability_report() {
+    let output = flowguard_replay_args(&["replay", "scenarios/secret_exfil.yaml", "--json"]);
+    let stdout = stdout(&output);
+    let report: serde_json::Value = serde_json::from_str(&stdout).expect("invalid json report");
+
+    assert_eq!(output.status.code(), Some(1), "stderr: {}", stderr(&output));
+    assert_eq!(stderr(&output), "");
+    assert_eq!(report["schema_version"], 1);
+    assert_eq!(report["scenario"], "secret_exfil");
+    assert_eq!(report["decision"]["kind"], "Block");
+    assert_eq!(report["violations"][0]["policy"], "SecretToNetwork");
+    assert_eq!(report["event_records"].as_array().unwrap().len(), 10);
+    assert_eq!(report["warnings"].as_array().unwrap().len(), 0);
+    assert!(!report["graph"]["nodes"].as_array().unwrap().is_empty());
+    assert!(!report["graph"]["edges"].as_array().unwrap().is_empty());
+    assert!(!report["node_labels"].as_array().unwrap().is_empty());
+    assert_eq!(report["explanations"][0]["policy"], "SecretToNetwork");
+
+    let send_record = report["event_records"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|record| record["kind"] == "Send")
+        .expect("missing send record");
+    assert_eq!(send_record["sequence"], 9);
+    assert!(send_record["edge_id"].as_u64().is_some());
+    assert_eq!(send_record["violation_indices"][0], 0);
 }
 
 #[test]

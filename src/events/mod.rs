@@ -201,4 +201,6 @@ pub struct EventRecord {
     pub source_node: Option<NodeId>,
     pub sink_node: Option<NodeId>,
     pub edge_id: Option<EdgeId>,
+    pub warning_indices: Vec<usize>,
+    pub violation_indices: Vec<usize>,
 }

@@ -674,6 +674,9 @@ events:
         assert_eq!(outcome.warnings[0].sequence, 1);
         assert_eq!(outcome.warnings[0].kind, ReplayWarningKind::MissingFd);
         assert!(outcome.warnings[0].message.contains("missing fd mapping"));
+        assert_eq!(outcome.records.len(), scenario.events.len());
+        assert_eq!(outcome.records[1].warning_indices, vec![0]);
+        assert!(outcome.records[1].edge_id.is_none());
     }
 
     #[test]

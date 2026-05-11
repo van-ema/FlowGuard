@@ -1,5 +1,5 @@
 use crate::enforce::EnforcementOutcome;
-use crate::events::{Event, Fd, ObservedEvent, ProcessId, SocketId};
+use crate::events::{Event, EventRecord, Fd, ObservedEvent, ProcessId, SocketId};
 use crate::explain::{self, Explanation};
 use crate::graph::{EdgeKind, ProvenanceGraph};
 use crate::labels::{Label, LabelState};
@@ -39,6 +39,7 @@ pub struct ScenarioOutcome {
     pub runtime: RuntimeState,
     pub graph: ProvenanceGraph,
     pub labels: LabelState,
+    pub records: Vec<EventRecord>,
     pub enforcement: EnforcementOutcome,
     pub explanations: Vec<Explanation>,
     pub warnings: Vec<ReplayWarning>,
@@ -83,29 +84,56 @@ struct Replay {
     runtime: RuntimeState,
     graph: ProvenanceGraph,
     labels: LabelState,
+    records: Vec<EventRecord>,
     explanations: Vec<Explanation>,
     violations: Vec<Violation>,
     warnings: Vec<ReplayWarning>,
     blocked_event: Option<ObservedEvent>,
 }
 
+#[derive(Default)]
+struct EventEffect {
+    source_node: Option<crate::graph::NodeId>,
+    sink_node: Option<crate::graph::NodeId>,
+    edge_id: Option<crate::graph::EdgeId>,
+}
+
 impl Replay {
     fn apply(&mut self, observed: &ObservedEvent) {
+        let warning_start = self.warnings.len();
+        let violation_start = self.violations.len();
+        let effect = self.apply_event(observed);
+
+        self.records.push(EventRecord {
+            observed: observed.clone(),
+            source_node: effect.source_node,
+            sink_node: effect.sink_node,
+            edge_id: effect.edge_id,
+            warning_indices: (warning_start..self.warnings.len()).collect(),
+            violation_indices: (violation_start..self.violations.len()).collect(),
+        });
+    }
+
+    fn apply_event(&mut self, observed: &ObservedEvent) -> EventEffect {
+        let mut effect = EventEffect::default();
+
         match &observed.event {
             Event::AgentLaunch { process, .. } => {
                 self.runtime.ensure_process(process);
                 let process_node = self.graph.process_node(process);
                 self.labels.seed(process_node, Label::Prompt);
+                effect.sink_node = Some(process_node);
             }
             Event::ApprovalGranted { process, .. } => {
                 self.runtime.approve_process(process);
                 let process_node = self.graph.process_node(process);
                 self.labels.seed(process_node, Label::Approved);
+                effect.sink_node = Some(process_node);
             }
             Event::Fork { parent, child, at } => {
                 if let Err(err) = self.runtime.fork_process(parent, child) {
                     self.warn_state_error(observed, err);
-                    return;
+                    return effect;
                 }
                 let parent_node = self.graph.process_node(parent);
                 let child_node = self.graph.process_node(child);
@@ -117,13 +145,16 @@ impl Replay {
                     observed.sequence,
                 );
                 self.labels.propagate_all(parent_node, child_node, edge_id);
+                effect.source_node = Some(parent_node);
+                effect.sink_node = Some(child_node);
+                effect.edge_id = Some(edge_id);
             }
             Event::Exec {
                 parent, child, at, ..
             } => {
                 if let Err(err) = self.runtime.exec_process(parent, child) {
                     self.warn_state_error(observed, err);
-                    return;
+                    return effect;
                 }
                 let parent_node = self.graph.process_node(parent);
                 let child_node = self.graph.process_node(child);
@@ -135,6 +166,9 @@ impl Replay {
                     observed.sequence,
                 );
                 self.labels.propagate_all(parent_node, child_node, edge_id);
+                effect.source_node = Some(parent_node);
+                effect.sink_node = Some(child_node);
+                effect.edge_id = Some(edge_id);
 
                 if let Some(violation) =
                     policy::check_external_to_exec(&self.labels, child_node, observed, edge_id)
@@ -175,6 +209,8 @@ impl Replay {
                 let file_node = self
                     .graph
                     .runtime_object_node(&RuntimeObject::File { path: path.clone() });
+                effect.source_node = Some(process_node);
+                effect.sink_node = Some(file_node);
                 if is_secret_path(path) {
                     self.labels.seed(file_node, Label::Secret);
                 }
@@ -204,6 +240,10 @@ impl Replay {
                 ..
             } => {
                 self.runtime.map_pipe(process, *pipe, *read_fd, *write_fd);
+                let pipe_node = self
+                    .graph
+                    .runtime_object_node(&RuntimeObject::PipeReadEnd { pipe: *pipe });
+                effect.sink_node = Some(pipe_node);
             }
             Event::Dup {
                 process,
@@ -213,18 +253,26 @@ impl Replay {
             } => {
                 if let Err(err) = self.runtime.dup_fd(process, *from_fd, *to_fd) {
                     self.warn_state_error(observed, err);
+                } else if let Some(object) = self.lookup_fd(observed, process, *to_fd) {
+                    let process_node = self.graph.process_node(process);
+                    let object_node = self.graph.runtime_object_node(&object);
+                    effect.source_node = Some(process_node);
+                    effect.sink_node = Some(object_node);
                 }
             }
             Event::Close { process, fd, .. } => {
                 if let Err(err) = self.runtime.close_fd(process, *fd) {
                     self.warn_state_error(observed, err);
+                } else {
+                    let process_node = self.graph.process_node(process);
+                    effect.source_node = Some(process_node);
                 }
             }
             Event::Read {
                 process, fd, at, ..
             } => {
                 let Some(object) = self.lookup_fd(observed, process, *fd) else {
-                    return;
+                    return effect;
                 };
                 let process_node = self.graph.process_node(process);
                 let object_node = self.graph.runtime_object_node(&object);
@@ -237,12 +285,15 @@ impl Replay {
                 );
                 self.labels
                     .propagate_all(object_node, process_node, edge_id);
+                effect.source_node = Some(object_node);
+                effect.sink_node = Some(process_node);
+                effect.edge_id = Some(edge_id);
             }
             Event::Write {
                 process, fd, at, ..
             } => {
                 let Some(object) = self.lookup_fd(observed, process, *fd) else {
-                    return;
+                    return effect;
                 };
                 let process_node = self.graph.process_node(process);
                 let object_node = self.graph.runtime_object_node(&object);
@@ -255,6 +306,9 @@ impl Replay {
                 );
                 self.labels
                     .propagate_all(process_node, object_node, edge_id);
+                effect.source_node = Some(process_node);
+                effect.sink_node = Some(object_node);
+                effect.edge_id = Some(edge_id);
 
                 if let RuntimeObject::File { path } = &object {
                     if let Some(violation) = policy::check_external_to_executable_write(
@@ -285,25 +339,28 @@ impl Replay {
                 self.runtime.connect_socket(process, *fd, endpoint.clone());
                 let process_node = self.graph.process_node(process);
                 let endpoint_node = self.graph.endpoint_node(endpoint.clone());
-                self.graph.append_edge(
+                let edge_id = self.graph.append_edge(
                     process_node,
                     endpoint_node,
                     EdgeKind::Connect,
                     *at,
                     observed.sequence,
                 );
+                effect.source_node = Some(process_node);
+                effect.sink_node = Some(endpoint_node);
+                effect.edge_id = Some(edge_id);
             }
             Event::Recv {
                 process, fd, at, ..
             } => {
                 let Some(object) = self.lookup_fd(observed, process, *fd) else {
-                    return;
+                    return effect;
                 };
                 let Some(socket_id) = self.socket_id_for_fd(observed, process, *fd, &object) else {
-                    return;
+                    return effect;
                 };
                 let Some(endpoint) = self.socket_endpoint(observed, socket_id) else {
-                    return;
+                    return effect;
                 };
                 let process_node = self.graph.process_node(process);
                 let endpoint_node = self.graph.endpoint_node(endpoint);
@@ -317,18 +374,21 @@ impl Replay {
                 );
                 self.labels
                     .propagate_label(endpoint_node, process_node, Label::External, edge_id);
+                effect.source_node = Some(endpoint_node);
+                effect.sink_node = Some(process_node);
+                effect.edge_id = Some(edge_id);
             }
             Event::Send {
                 process, fd, at, ..
             } => {
                 let Some(object) = self.lookup_fd(observed, process, *fd) else {
-                    return;
+                    return effect;
                 };
                 let Some(socket_id) = self.socket_id_for_fd(observed, process, *fd, &object) else {
-                    return;
+                    return effect;
                 };
                 let Some(endpoint) = self.socket_endpoint(observed, socket_id) else {
-                    return;
+                    return effect;
                 };
                 let process_node = self.graph.process_node(process);
                 let endpoint_node = self.graph.endpoint_node(endpoint);
@@ -341,6 +401,9 @@ impl Replay {
                 );
                 self.labels
                     .propagate_all(process_node, endpoint_node, edge_id);
+                effect.source_node = Some(process_node);
+                effect.sink_node = Some(endpoint_node);
+                effect.edge_id = Some(edge_id);
 
                 if let Some(violation) =
                     policy::check_secret_to_network(&self.labels, endpoint_node, observed, edge_id)
@@ -358,6 +421,7 @@ impl Replay {
             }
             Event::SocketCreate { process, .. } => {
                 let process_node = self.graph.process_node(process);
+                effect.source_node = Some(process_node);
 
                 if let Some(violation) =
                     policy::check_copy_fail_af_alg_pattern(&self.labels, process_node, observed)
@@ -370,6 +434,8 @@ impl Replay {
             Event::Splice { .. } => {}
             Event::Exit { .. } => {}
         }
+
+        effect
     }
 
     fn lookup_fd(
@@ -439,6 +505,7 @@ impl Replay {
             runtime: self.runtime,
             graph: self.graph,
             labels: self.labels,
+            records: self.records,
             enforcement: EnforcementOutcome {
                 decision,
                 blocked_event: self.blocked_event,
