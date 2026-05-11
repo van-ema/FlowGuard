@@ -629,6 +629,36 @@ events:
     }
 
     #[test]
+    fn sandbox_escape_docker_socket_yaml_blocks() {
+        let scenario = load_yaml_file("scenarios/sandbox_escape_docker_socket.yaml").unwrap();
+
+        let outcome = ScenarioRunner::new().run(&scenario);
+
+        assert_eq!(scenario.name, "sandbox_escape_docker_socket");
+        assert_eq!(outcome.enforcement.decision.kind, DecisionKind::Block);
+        assert_eq!(
+            outcome.enforcement.decision.violations[0].policy,
+            PolicyId::PromptToContainerRuntimeSocket
+        );
+        assert!(matches!(
+            &outcome.enforcement.decision.violations[0].sink_event.event,
+            Event::Open { path, .. } if path == &std::path::PathBuf::from("/var/run/docker.sock")
+        ));
+        assert!(outcome.explanations[0].path.is_empty());
+    }
+
+    #[test]
+    fn benign_tmp_socket_file_yaml_is_allowed() {
+        let scenario = load_yaml_file("scenarios/benign_tmp_socket_file.yaml").unwrap();
+
+        let outcome = ScenarioRunner::new().run(&scenario);
+
+        assert_eq!(scenario.name, "benign_tmp_socket_file");
+        assert_eq!(outcome.enforcement.decision.kind, DecisionKind::Allow);
+        assert!(outcome.enforcement.decision.violations.is_empty());
+    }
+
+    #[test]
     fn benign_send_yaml_is_allowed() {
         let scenario = load_yaml_file("scenarios/benign_send.yaml").unwrap();
 

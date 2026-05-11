@@ -109,6 +109,17 @@ fn format_observed_event(observed: &ObservedEvent) -> String {
                 process.pid, process.start_time.0, fd.0, len
             )
         }
+        Event::Open {
+            process, fd, path, ..
+        } => {
+            format!(
+                "OPEN proc:{}@{} fd:{} path:{}",
+                process.pid,
+                process.start_time.0,
+                fd.0,
+                path.display()
+            )
+        }
         Event::SocketCreate {
             process,
             fd,
@@ -176,6 +187,7 @@ fn policy_name(policy: PolicyId) -> &'static str {
         PolicyId::SecretToNetwork => "SecretToNetwork",
         PolicyId::PromptToShellWithoutApproval => "PromptToShellWithoutApproval",
         PolicyId::ExternalToExecutableWrite => "ExternalToExecutableWrite",
+        PolicyId::PromptToContainerRuntimeSocket => "PromptToContainerRuntimeSocket",
         PolicyId::CopyFailAfAlgPattern => "CopyFailAfAlgPattern",
     }
 }

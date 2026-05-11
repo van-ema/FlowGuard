@@ -1,0 +1,18 @@
+name: benign_tmp_socket_file
+events:
+  - type: agent_launch
+    process:
+      pid: 750
+      start_time: 6500
+    command:
+      - agent
+      - inspect-test-fixture
+    at: 1
+
+  - type: open
+    process:
+      pid: 750
+      start_time: 6500
+    fd: 3
+    path: /tmp/docker.sock
+    at: 2

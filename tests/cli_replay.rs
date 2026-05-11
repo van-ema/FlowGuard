@@ -73,6 +73,17 @@ fn replay_external_executable_write_blocks_with_explanation() {
 }
 
 #[test]
+fn replay_sandbox_escape_docker_socket_blocks() {
+    let output = flowguard_replay("scenarios/sandbox_escape_docker_socket.yaml");
+    let stdout = stdout(&output);
+
+    assert_eq!(output.status.code(), Some(1), "stderr: {}", stderr(&output));
+    assert!(stdout.contains("BLOCK PromptToContainerRuntimeSocket"));
+    assert!(stdout.contains("sink:"));
+    assert!(stdout.contains("OPEN proc:740@6400 fd:3 path:/var/run/docker.sock"));
+}
+
+#[test]
 fn replay_benign_send_allows() {
     let output = flowguard_replay("scenarios/benign_send.yaml");
 
@@ -91,6 +102,14 @@ fn replay_prompt_shell_approved_allows() {
 #[test]
 fn replay_benign_external_download_allows() {
     let output = flowguard_replay("scenarios/benign_external_download.yaml");
+
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "ALLOW\n");
+}
+
+#[test]
+fn replay_benign_tmp_socket_file_allows() {
+    let output = flowguard_replay("scenarios/benign_tmp_socket_file.yaml");
 
     assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
     assert_eq!(stdout(&output), "ALLOW\n");

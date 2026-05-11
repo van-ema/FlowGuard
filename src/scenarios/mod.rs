@@ -151,11 +151,29 @@ impl Replay {
                 process, fd, path, ..
             } => {
                 self.runtime.map_open_file(process, *fd, path.clone());
+                let process_node = self.graph.process_node(process);
+                let file_node = self
+                    .graph
+                    .runtime_object_node(&RuntimeObject::File { path: path.clone() });
                 if is_secret_path(path) {
-                    let file_node = self
-                        .graph
-                        .runtime_object_node(&RuntimeObject::File { path: path.clone() });
                     self.labels.seed(file_node, Label::Secret);
+                }
+
+                if let Some(violation) = policy::check_prompt_to_container_runtime_socket(
+                    &self.labels,
+                    process_node,
+                    path,
+                    observed,
+                ) {
+                    self.explanations.push(explain::for_label(
+                        violation.policy,
+                        process_node,
+                        Label::Prompt,
+                        &self.labels,
+                        &self.graph,
+                    ));
+                    self.violations.push(violation);
+                    self.blocked_event = Some(observed.clone());
                 }
             }
             Event::Pipe {

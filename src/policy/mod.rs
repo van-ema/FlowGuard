@@ -10,6 +10,7 @@ pub enum PolicyId {
     SecretToNetwork,
     PromptToShellWithoutApproval,
     ExternalToExecutableWrite,
+    PromptToContainerRuntimeSocket,
     CopyFailAfAlgPattern,
 }
 
@@ -117,6 +118,27 @@ pub fn check_external_to_executable_write(
     None
 }
 
+pub fn check_prompt_to_container_runtime_socket(
+    labels: &LabelState,
+    process_node: NodeId,
+    path: &Path,
+    sink_event: &ObservedEvent,
+) -> Option<Violation> {
+    if !matches!(sink_event.event, Event::Open { .. }) {
+        return None;
+    }
+
+    if labels.has_label(process_node, Label::Prompt) && is_container_runtime_socket(path) {
+        return Some(Violation {
+            policy: PolicyId::PromptToContainerRuntimeSocket,
+            sink_event: sink_event.clone(),
+            sink_edge: None,
+        });
+    }
+
+    None
+}
+
 pub fn check_copy_fail_af_alg_pattern(
     labels: &LabelState,
     process_node: NodeId,
@@ -148,6 +170,22 @@ fn is_executable_path(path: &Path) -> bool {
         || path.starts_with("/usr/sbin")
         || path.starts_with("/usr/local/bin")
         || path.starts_with("/usr/local/sbin")
+}
+
+fn is_container_runtime_socket(path: &Path) -> bool {
+    matches!(
+        path.to_str(),
+        Some(
+            "/var/run/docker.sock"
+                | "/run/docker.sock"
+                | "/run/containerd/containerd.sock"
+                | "/var/run/containerd/containerd.sock"
+                | "/run/crio/crio.sock"
+                | "/var/run/crio/crio.sock"
+                | "/run/podman/podman.sock"
+                | "/var/run/podman/podman.sock"
+        )
+    )
 }
 
 fn is_shell_or_interpreter(program: &Path, argv: &[String]) -> bool {
