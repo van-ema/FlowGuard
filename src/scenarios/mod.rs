@@ -7,6 +7,7 @@ use crate::policy::{self, Violation};
 use crate::state::{RuntimeObject, RuntimeState};
 
 pub mod curl_bash;
+pub mod demo;
 pub mod file;
 pub mod secret_to_network;
 

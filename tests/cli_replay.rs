@@ -64,6 +64,40 @@ fn replay_secret_exfil_json_includes_observability_report() {
 }
 
 #[test]
+fn demo_secret_exfil_json_blocks_with_observability_report() {
+    let output = flowguard_replay_args(&["demo", "secret-exfil", "--json"]);
+    let stdout = stdout(&output);
+    let report: serde_json::Value = serde_json::from_str(&stdout).expect("invalid json report");
+
+    assert_eq!(output.status.code(), Some(1), "stderr: {}", stderr(&output));
+    assert_eq!(stderr(&output), "");
+    assert_eq!(report["scenario"], "demo_secret_exfil");
+    assert_eq!(report["decision"]["kind"], "Block");
+    assert_eq!(report["violations"][0]["policy"], "SecretToNetwork");
+    assert_eq!(report["event_records"].as_array().unwrap().len(), 10);
+    assert_eq!(report["warnings"].as_array().unwrap().len(), 0);
+    assert_eq!(report["explanations"][0]["policy"], "SecretToNetwork");
+
+    let first_step = &report["explanations"][0]["path"][0];
+    assert_eq!(first_step["edge_kind"], "Read");
+    assert_eq!(first_step["from_display"], "file:/home/user/.ssh/id_rsa");
+
+    let send_record = report["event_records"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|record| record["kind"] == "Send")
+        .expect("missing send record");
+    assert_eq!(send_record["violation_indices"][0], 0);
+    assert!(
+        send_record["event"]
+            .as_str()
+            .unwrap()
+            .contains("SEND proc:801@7010 fd:6")
+    );
+}
+
+#[test]
 fn replay_copy_fail_blocks_af_alg_socket() {
     let output = flowguard_replay("scenarios/copy_fail.yaml");
     let stdout = stdout(&output);

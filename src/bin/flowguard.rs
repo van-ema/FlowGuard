@@ -5,8 +5,9 @@ use flowguard::events::{Event, ObservedEvent};
 use flowguard::graph::{EdgeKind, Node, ProvenanceGraph};
 use flowguard::observability::ReplayReport;
 use flowguard::policy::{DecisionKind, PolicyId};
+use flowguard::scenarios::demo;
 use flowguard::scenarios::file::load_yaml_file;
-use flowguard::scenarios::{ReplayWarning, ScenarioOutcome, ScenarioRunner};
+use flowguard::scenarios::{ReplayWarning, Scenario, ScenarioOutcome, ScenarioRunner};
 
 fn main() -> ExitCode {
     match run() {
@@ -25,38 +26,70 @@ fn run() -> Result<ExitCode, String> {
     match command.as_str() {
         "replay" => {
             let scenario_path = args.next().ok_or_else(usage)?;
-            let mut json = false;
-            for arg in args {
-                match arg.as_str() {
-                    "--json" => json = true,
-                    _ => return Err(usage()),
-                }
-            }
+            let json = parse_json_flag(args)?;
 
             let scenario = load_yaml_file(&scenario_path).map_err(|err| err.to_string())?;
-            let outcome = ScenarioRunner::new().run(&scenario);
-            if json {
-                let report = ReplayReport::from_outcome(&scenario, &outcome);
-                let output =
-                    serde_json::to_string_pretty(&report).map_err(|err| err.to_string())?;
-                println!("{output}");
-            } else {
-                print_replay_outcome(&outcome);
-                print_replay_warnings(&outcome);
-            }
-
-            if outcome.enforcement.decision.kind == DecisionKind::Block {
-                Ok(ExitCode::from(1))
-            } else {
-                Ok(ExitCode::SUCCESS)
-            }
+            run_scenario(&scenario, json)
+        }
+        "demo" => {
+            let demo_name = args.next().ok_or_else(usage)?;
+            let json = parse_json_flag(args)?;
+            let scenario = load_demo(&demo_name)?;
+            run_scenario(&scenario, json)
         }
         _ => Err(usage()),
     }
 }
 
+fn parse_json_flag(args: impl Iterator<Item = String>) -> Result<bool, String> {
+    let mut json = false;
+    for arg in args {
+        match arg.as_str() {
+            "--json" => json = true,
+            _ => return Err(usage()),
+        }
+    }
+    Ok(json)
+}
+
+fn load_demo(name: &str) -> Result<Scenario, String> {
+    match name {
+        "secret-exfil" => {
+            let fixture_path =
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/home/.ssh/id_rsa");
+            let fixture = std::fs::read(&fixture_path).map_err(|err| {
+                format!(
+                    "failed to read demo secret fixture {}: {err}",
+                    fixture_path.display()
+                )
+            })?;
+            Ok(demo::secret_exfil(fixture.len()))
+        }
+        _ => Err(usage()),
+    }
+}
+
+fn run_scenario(scenario: &Scenario, json: bool) -> Result<ExitCode, String> {
+    let outcome = ScenarioRunner::new().run(scenario);
+    if json {
+        let report = ReplayReport::from_outcome(scenario, &outcome);
+        let output = serde_json::to_string_pretty(&report).map_err(|err| err.to_string())?;
+        println!("{output}");
+    } else {
+        print_replay_outcome(&outcome);
+        print_replay_warnings(&outcome);
+    }
+
+    if outcome.enforcement.decision.kind == DecisionKind::Block {
+        Ok(ExitCode::from(1))
+    } else {
+        Ok(ExitCode::SUCCESS)
+    }
+}
+
 fn usage() -> String {
-    "usage: flowguard replay <scenario.yaml> [--json]".to_string()
+    "usage: flowguard replay <scenario.yaml> [--json]\n       flowguard demo secret-exfil [--json]"
+        .to_string()
 }
 
 fn print_replay_outcome(outcome: &ScenarioOutcome) {
