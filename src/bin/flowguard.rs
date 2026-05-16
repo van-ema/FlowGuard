@@ -5,9 +5,8 @@ use flowguard::events::{Event, ObservedEvent};
 use flowguard::graph::{EdgeKind, Node, ProvenanceGraph};
 use flowguard::observability::ReplayReport;
 use flowguard::policy::{DecisionKind, PolicyId};
-use flowguard::scenarios::demo;
-use flowguard::scenarios::file::load_yaml_file;
 use flowguard::scenarios::{ReplayWarning, Scenario, ScenarioOutcome, ScenarioRunner};
+use flowguard::sources::{DemoSecretExfilSource, EventSource, YamlScenarioSource};
 
 fn main() -> ExitCode {
     match run() {
@@ -27,15 +26,19 @@ fn run() -> Result<ExitCode, String> {
         "replay" => {
             let scenario_path = args.next().ok_or_else(usage)?;
             let json = parse_json_flag(args)?;
-
-            let scenario = load_yaml_file(&scenario_path).map_err(|err| err.to_string())?;
-            run_scenario(&scenario, json)
+            let source = YamlScenarioSource::new(scenario_path);
+            run_source(&source, json)
         }
         "demo" => {
             let demo_name = args.next().ok_or_else(usage)?;
             let json = parse_json_flag(args)?;
-            let scenario = load_demo(&demo_name)?;
-            run_scenario(&scenario, json)
+            match demo_name.as_str() {
+                "secret-exfil" => {
+                    let source = DemoSecretExfilSource::repo_default();
+                    run_source(&source, json)
+                }
+                _ => Err(usage()),
+            }
         }
         _ => Err(usage()),
     }
@@ -52,21 +55,9 @@ fn parse_json_flag(args: impl Iterator<Item = String>) -> Result<bool, String> {
     Ok(json)
 }
 
-fn load_demo(name: &str) -> Result<Scenario, String> {
-    match name {
-        "secret-exfil" => {
-            let fixture_path =
-                std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/home/.ssh/id_rsa");
-            let fixture = std::fs::read(&fixture_path).map_err(|err| {
-                format!(
-                    "failed to read demo secret fixture {}: {err}",
-                    fixture_path.display()
-                )
-            })?;
-            Ok(demo::secret_exfil(fixture.len()))
-        }
-        _ => Err(usage()),
-    }
+fn run_source(source: &dyn EventSource, json: bool) -> Result<ExitCode, String> {
+    let scenario = source.load_scenario().map_err(|err| err.to_string())?;
+    run_scenario(&scenario, json)
 }
 
 fn run_scenario(scenario: &Scenario, json: bool) -> Result<ExitCode, String> {

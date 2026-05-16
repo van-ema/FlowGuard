@@ -6,4 +6,5 @@ pub mod labels;
 pub mod observability;
 pub mod policy;
 pub mod scenarios;
+pub mod sources;
 pub mod state;
