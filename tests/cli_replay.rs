@@ -200,3 +200,21 @@ fn replay_benign_socket_allows() {
     assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
     assert_eq!(stdout(&output), "ALLOW\n");
 }
+
+#[test]
+fn observe_requires_command_separator() {
+    let output = flowguard_replay_args(&["observe", "--json"]);
+    let stderr = stderr(&output);
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr.contains("flowguard observe [--json] [--raw-strace <path>] -- <command...>"));
+}
+
+#[test]
+fn observe_raw_strace_requires_path() {
+    let output = flowguard_replay_args(&["observe", "--raw-strace"]);
+    let stderr = stderr(&output);
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr.contains("flowguard observe [--json] [--raw-strace <path>] -- <command...>"));
+}

@@ -1,4 +1,5 @@
 use std::env;
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 use flowguard::events::{Event, ObservedEvent};
@@ -6,7 +7,7 @@ use flowguard::graph::{EdgeKind, Node, ProvenanceGraph};
 use flowguard::observability::ReplayReport;
 use flowguard::policy::{DecisionKind, PolicyId};
 use flowguard::scenarios::{ReplayWarning, Scenario, ScenarioOutcome, ScenarioRunner};
-use flowguard::sources::{DemoSecretExfilSource, EventSource, YamlScenarioSource};
+use flowguard::sources::{DemoSecretExfilSource, EventSource, StraceSource, YamlScenarioSource};
 
 fn main() -> ExitCode {
     match run() {
@@ -40,6 +41,14 @@ fn run() -> Result<ExitCode, String> {
                 _ => Err(usage()),
             }
         }
+        "observe" => {
+            let (json, raw_trace_path, command) = parse_observe_args(args)?;
+            let mut source = StraceSource::new(command);
+            if let Some(raw_trace_path) = raw_trace_path {
+                source = source.with_raw_trace_path(raw_trace_path);
+            }
+            run_source(&source, json)
+        }
         _ => Err(usage()),
     }
 }
@@ -53,6 +62,41 @@ fn parse_json_flag(args: impl Iterator<Item = String>) -> Result<bool, String> {
         }
     }
     Ok(json)
+}
+
+fn parse_observe_args(
+    mut args: impl Iterator<Item = String>,
+) -> Result<(bool, Option<PathBuf>, Vec<String>), String> {
+    let mut json = false;
+    let mut raw_trace_path = None;
+    let mut command = Vec::new();
+    let mut after_separator = false;
+
+    while let Some(arg) = args.next() {
+        if after_separator {
+            command.push(arg);
+            continue;
+        }
+
+        match arg.as_str() {
+            "--json" => json = true,
+            "--raw-strace" => {
+                let path = args.next().ok_or_else(usage)?;
+                if path == "--" {
+                    return Err(usage());
+                }
+                raw_trace_path = Some(PathBuf::from(path));
+            }
+            "--" => after_separator = true,
+            _ => return Err(usage()),
+        }
+    }
+
+    if command.is_empty() {
+        return Err(usage());
+    }
+
+    Ok((json, raw_trace_path, command))
 }
 
 fn run_source(source: &dyn EventSource, json: bool) -> Result<ExitCode, String> {
@@ -79,7 +123,7 @@ fn run_scenario(scenario: &Scenario, json: bool) -> Result<ExitCode, String> {
 }
 
 fn usage() -> String {
-    "usage: flowguard replay <scenario.yaml> [--json]\n       flowguard demo secret-exfil [--json]"
+    "usage: flowguard replay <scenario.yaml> [--json]\n       flowguard demo secret-exfil [--json]\n       flowguard observe [--json] [--raw-strace <path>] -- <command...>"
         .to_string()
 }
 

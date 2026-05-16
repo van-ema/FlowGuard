@@ -15,3 +15,7 @@ Cargo.lock
 
 # Logs
 *.log
+
+# Python helper bytecode
+__pycache__/
+*.pyc

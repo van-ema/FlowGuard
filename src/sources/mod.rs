@@ -5,6 +5,9 @@ use crate::scenarios::Scenario;
 use crate::scenarios::demo;
 use crate::scenarios::file::{ScenarioFileError, load_yaml_file};
 
+pub mod strace;
+pub use strace::StraceSource;
+
 /// Boundary between event collection and the provenance engine.
 ///
 /// Event sources own acquisition and normalization. The runner should not care
@@ -24,6 +27,14 @@ pub enum EventSourceError {
         path: PathBuf,
         source: std::io::Error,
     },
+    CommandIo {
+        program: String,
+        source: std::io::Error,
+    },
+    RawTraceIo {
+        path: PathBuf,
+        source: std::io::Error,
+    },
 }
 
 impl fmt::Display for EventSourceError {
@@ -36,6 +47,12 @@ impl fmt::Display for EventSourceError {
                     "failed to read event source {}: {source}",
                     path.display()
                 )
+            }
+            Self::CommandIo { program, source } => {
+                write!(f, "failed to run event source command {program}: {source}")
+            }
+            Self::RawTraceIo { path, source } => {
+                write!(f, "failed to write raw strace {}: {source}", path.display())
             }
         }
     }
