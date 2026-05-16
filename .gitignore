@@ -15,6 +15,12 @@ Cargo.lock
 
 # Logs
 *.log
+logs/*.graph.dot
+logs/*.graph.mmd
+logs/*.graph.svg
+logs/*.port
+logs/*.raw.strace
+logs/*.report.json
 
 # Python helper bytecode
 __pycache__/
