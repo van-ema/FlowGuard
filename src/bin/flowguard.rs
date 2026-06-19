@@ -6,6 +6,7 @@ use flowguard::events::{Event, ObservedEvent};
 use flowguard::graph::{EdgeKind, Node, ProvenanceGraph};
 use flowguard::observability::ReplayReport;
 use flowguard::policy::{DecisionKind, PolicyId};
+use flowguard::protect::PtraceProtector;
 use flowguard::scenarios::{ReplayWarning, Scenario, ScenarioOutcome, ScenarioRunner};
 use flowguard::sources::{DemoSecretExfilSource, EventSource, StraceSource, YamlScenarioSource};
 
@@ -48,6 +49,10 @@ fn run() -> Result<ExitCode, String> {
                 source = source.with_raw_trace_path(raw_trace_path);
             }
             run_source(&source, json)
+        }
+        "protect" => {
+            let (json, command) = parse_command_args(args)?;
+            run_protect(command, json)
         }
         _ => Err(usage()),
     }
@@ -99,6 +104,33 @@ fn parse_observe_args(
     Ok((json, raw_trace_path, command))
 }
 
+fn parse_command_args(
+    mut args: impl Iterator<Item = String>,
+) -> Result<(bool, Vec<String>), String> {
+    let mut json = false;
+    let mut command = Vec::new();
+    let mut after_separator = false;
+
+    while let Some(arg) = args.next() {
+        if after_separator {
+            command.push(arg);
+            continue;
+        }
+
+        match arg.as_str() {
+            "--json" => json = true,
+            "--" => after_separator = true,
+            _ => return Err(usage()),
+        }
+    }
+
+    if command.is_empty() {
+        return Err(usage());
+    }
+
+    Ok((json, command))
+}
+
 fn run_source(source: &dyn EventSource, json: bool) -> Result<ExitCode, String> {
     let scenario = source.load_scenario().map_err(|err| err.to_string())?;
     run_scenario(&scenario, json)
@@ -122,8 +154,34 @@ fn run_scenario(scenario: &Scenario, json: bool) -> Result<ExitCode, String> {
     }
 }
 
+fn run_protect(command: Vec<String>, json: bool) -> Result<ExitCode, String> {
+    let run = PtraceProtector::new(command).run()?;
+    if json {
+        let report = ReplayReport::from_outcome(&run.scenario, &run.outcome);
+        let output = serde_json::to_string_pretty(&report).map_err(|err| err.to_string())?;
+        println!("{output}");
+    } else {
+        print_replay_outcome(&run.outcome);
+        print_replay_warnings(&run.outcome);
+    }
+
+    if run.outcome.enforcement.decision.kind == DecisionKind::Block {
+        Ok(ExitCode::from(1))
+    } else {
+        Ok(exit_code_from_i32(run.exit_code))
+    }
+}
+
+fn exit_code_from_i32(code: i32) -> ExitCode {
+    if (0..=255).contains(&code) {
+        ExitCode::from(code as u8)
+    } else {
+        ExitCode::from(1)
+    }
+}
+
 fn usage() -> String {
-    "usage: flowguard replay <scenario.yaml> [--json]\n       flowguard demo secret-exfil [--json]\n       flowguard observe [--json] [--raw-strace <path>] -- <command...>"
+    "usage: flowguard replay <scenario.yaml> [--json]\n       flowguard demo secret-exfil [--json]\n       flowguard observe [--json] [--raw-strace <path>] -- <command...>\n       flowguard protect [--json] -- <command...>"
         .to_string()
 }
 

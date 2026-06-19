@@ -70,7 +70,7 @@ impl ScenarioRunner {
     }
 
     pub fn run(&self, scenario: &Scenario) -> ScenarioOutcome {
-        let mut replay = Replay::default();
+        let mut replay = ReplaySession::new();
 
         for observed in &scenario.events {
             replay.apply(observed);
@@ -81,7 +81,7 @@ impl ScenarioRunner {
 }
 
 #[derive(Default)]
-struct Replay {
+pub struct ReplaySession {
     runtime: RuntimeState,
     graph: ProvenanceGraph,
     labels: LabelState,
@@ -99,20 +99,34 @@ struct EventEffect {
     edge_id: Option<crate::graph::EdgeId>,
 }
 
-impl Replay {
-    fn apply(&mut self, observed: &ObservedEvent) {
+impl ReplaySession {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn apply(&mut self, observed: &ObservedEvent) -> EventRecord {
         let warning_start = self.warnings.len();
         let violation_start = self.violations.len();
         let effect = self.apply_event(observed);
 
-        self.records.push(EventRecord {
+        let record = EventRecord {
             observed: observed.clone(),
             source_node: effect.source_node,
             sink_node: effect.sink_node,
             edge_id: effect.edge_id,
             warning_indices: (warning_start..self.warnings.len()).collect(),
             violation_indices: (violation_start..self.violations.len()).collect(),
-        });
+        };
+        self.records.push(record.clone());
+        record
+    }
+
+    pub fn has_blocking_decision(&self) -> bool {
+        policy::decide(self.violations.clone()).kind == crate::policy::DecisionKind::Block
+    }
+
+    pub fn resolve_fd(&self, process: &ProcessId, fd: Fd) -> Result<&RuntimeObject, String> {
+        self.runtime.lookup_fd(process, fd)
     }
 
     fn apply_event(&mut self, observed: &ObservedEvent) -> EventEffect {
@@ -500,7 +514,7 @@ impl Replay {
         });
     }
 
-    fn finish(self) -> ScenarioOutcome {
+    pub fn finish(self) -> ScenarioOutcome {
         let decision = policy::decide(self.violations);
         ScenarioOutcome {
             runtime: self.runtime,
@@ -539,7 +553,7 @@ mod tests {
     use crate::graph::{EdgeKind, Node};
     use crate::policy::DecisionKind;
 
-    use super::{Scenario, ScenarioRunner};
+    use super::{ReplaySession, Scenario, ScenarioRunner};
 
     #[test]
     fn connect_records_process_to_endpoint_edge_without_label_propagation() {
@@ -579,5 +593,54 @@ mod tests {
             outcome.graph.nodes.get(&edge.to),
             Some(&Node::Endpoint(endpoint))
         );
+    }
+
+    #[test]
+    fn replay_session_blocks_incrementally_at_secret_send() {
+        let process = ProcessId::new(42, StartTime(100));
+        let endpoint = Endpoint::tcp("evil.test", 443);
+        let scenario = Scenario::new(
+            "incremental_secret_send",
+            vec![
+                Event::AgentLaunch {
+                    process: process.clone(),
+                    command: vec!["python3".into(), "agent.py".into()],
+                    at: Timestamp(1),
+                },
+                Event::Open {
+                    process: process.clone(),
+                    fd: Fd(3),
+                    path: "/home/user/.ssh/id_rsa".into(),
+                    at: Timestamp(2),
+                },
+                Event::Read {
+                    process: process.clone(),
+                    fd: Fd(3),
+                    len: 128,
+                    at: Timestamp(3),
+                },
+                Event::Connect {
+                    process: process.clone(),
+                    fd: Fd(4),
+                    endpoint,
+                    at: Timestamp(4),
+                },
+                Event::Send {
+                    process,
+                    fd: Fd(4),
+                    len: 128,
+                    at: Timestamp(5),
+                },
+            ],
+        );
+        let mut replay = ReplaySession::new();
+
+        for observed in scenario.events.iter().take(4) {
+            replay.apply(observed);
+            assert!(!replay.has_blocking_decision());
+        }
+
+        replay.apply(&scenario.events[4]);
+        assert!(replay.has_blocking_decision());
     }
 }
