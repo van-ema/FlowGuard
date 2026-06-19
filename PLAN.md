@@ -242,6 +242,95 @@ Rules:
 - context cannot override deterministic blocks such as `SECRET -> SEND`
 - full task text should be optional and treated as untrusted metadata
 
+## Precision Track: DynamoRIO Tainted-Buffer POC
+
+Goal: evaluate whether dynamic binary instrumentation can give Flowguard a higher-precision signal for `SECRET -> network` without becoming language-specific.
+
+This is not the primary MVP enforcement path. The primary MVP remains syscall provenance plus runtime blocking. The DynamoRIO work is a precision experiment that should produce additional evidence for byte-derived leaks.
+
+### Task
+
+Build a minimal DynamoRIO client that tracks secret-derived bytes from file reads to network sends for one Linux process tree.
+
+Initial target:
+
+```text
+drrun -c flowguard_dbi_client.so -- python3 fixtures/agents/python_secret_post.py
+```
+
+The client should:
+
+- observe `open/openat` and identify configured secret paths
+- observe successful `read` from a secret fd and mark the returned user buffer as `SECRET`
+- instrument memory/register data movement enough to propagate `SECRET` through direct copies and common libc copy paths
+- observe `send/sendto/sendmsg/write` to socket fds
+- report `DefiniteSecretToNetwork` if the send buffer overlaps tainted bytes
+- emit a normalized Flowguard event/report that can be correlated with the syscall provenance graph
+
+### Scope
+
+MVP scope:
+
+- Linux container target only
+- x86_64 first, AArch64 only after the first POC works
+- one traced process plus direct child processes if DynamoRIO client inheritance is practical
+- Python demo first, but no Python-specific hooks
+- direct byte copy propagation first
+- block by aborting/killing the process or returning a failing syscall if practical
+
+Non-goals:
+
+- full language-level semantics
+- complete implicit-flow tracking
+- cryptographic/semantic leakage detection
+- high performance
+- production hardening
+- replacing FD-table-based syscall provenance
+
+### Architecture
+
+Keep the DBI component outside the Rust core initially.
+
+Proposed layout:
+
+```text
+dbi/dynamorio-client/
+  CMakeLists.txt
+  src/client.cpp
+  README.md
+
+src/events/
+  add optional high-confidence event kind later:
+  DefiniteTaintedSend { process, fd, endpoint, taint_source, byte_count, at }
+```
+
+Flowguard integration should be one-way at first:
+
+```text
+DynamoRIO client JSONL
+-> Flowguard import/replay
+-> correlate with syscall graph by pid/start-time/fd/event time
+```
+
+Do not let the DBI client mutate the provenance graph directly. Every graph edge still comes from an observed event in the normal engine.
+
+### Acceptance Criteria
+
+The POC is useful only if it proves all of these:
+
+- A Python script that reads `fixtures/home/.ssh/id_rsa` and sends the same bytes is reported as `DefiniteSecretToNetwork`.
+- A Python script that reads the same secret but sends unrelated constant text does not produce the high-confidence DBI violation.
+- The normal syscall provenance layer still reports the conservative `PossibleSecretToNetwork` case.
+- The report includes secret source path, sink fd/endpoint when available, tainted byte count, process identity, and event timestamp.
+- The test runs in Docker with one command and writes artifacts under `logs/`.
+
+### Risks
+
+- Dynamic binary instrumentation may be too slow for normal agent execution.
+- Correct taint propagation across all instructions and optimized libc paths is a large project.
+- JIT runtimes, native extensions, shared memory, mmap, and multi-process handoff can create blind spots.
+- The DBI result should be treated as high-confidence when present, not as the only security boundary.
+
 ## Benchmark Strategy
 
 The MVP should not start by integrating a large external benchmark. First prove Flowguard's core claim with small deterministic scenarios, then map selected external benchmark cases into Flowguard scenario files.
