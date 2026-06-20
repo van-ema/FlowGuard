@@ -159,6 +159,18 @@ fn replay_benign_send_allows() {
 }
 
 #[test]
+fn replay_false_positive_secret_then_unrelated_send_blocks_by_process_taint() {
+    let output = flowguard_replay("scenarios/false_positive_secret_then_unrelated_send.yaml");
+    let stdout = stdout(&output);
+
+    assert_eq!(output.status.code(), Some(1), "stderr: {}", stderr(&output));
+    assert!(stdout.contains("BLOCK SecretToNetwork"));
+    assert!(stdout.contains("SEND proc:900@8000 fd:4 len:2"));
+    assert!(stdout.contains("file:/home/user/.ssh/id_rsa --READ--> proc:900@8000"));
+    assert!(stdout.contains("proc:900@8000 --SEND--> endpoint:telemetry.example:443"));
+}
+
+#[test]
 fn replay_prompt_shell_approved_allows() {
     let output = flowguard_replay("scenarios/prompt_shell_approved.yaml");
 
@@ -217,4 +229,13 @@ fn observe_raw_strace_requires_path() {
 
     assert_eq!(output.status.code(), Some(2));
     assert!(stderr.contains("flowguard observe [--json] [--raw-strace <path>] -- <command...>"));
+}
+
+#[test]
+fn protect_requires_command_separator() {
+    let output = flowguard_replay_args(&["protect", "--json"]);
+    let stderr = stderr(&output);
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr.contains("flowguard protect [--json] -- <command...>"));
 }
