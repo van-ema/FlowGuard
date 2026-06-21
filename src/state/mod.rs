@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use crate::events::{Endpoint, Fd, PipeId, ProcessId, SocketId};
+use crate::events::{Endpoint, Fd, FdSnapshotEntry, PipeId, ProcessId, SocketId};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RuntimeObject {
@@ -9,6 +9,7 @@ pub enum RuntimeObject {
     PipeReadEnd { pipe: PipeId },
     PipeWriteEnd { pipe: PipeId },
     Socket { socket: SocketId },
+    UnknownFd { description: String },
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -19,6 +20,10 @@ pub struct FdTable {
 impl FdTable {
     pub fn insert(&mut self, fd: Fd, object: RuntimeObject) {
         self.entries.insert(fd, object);
+    }
+
+    pub fn insert_if_absent(&mut self, fd: Fd, object: RuntimeObject) {
+        self.entries.entry(fd).or_insert(object);
     }
 
     pub fn get(&self, fd: Fd) -> Option<&RuntimeObject> {
@@ -101,6 +106,18 @@ impl RuntimeState {
         self.ensure_process(process)
             .fd_table
             .insert(fd, RuntimeObject::File { path });
+    }
+
+    pub fn snapshot_fds(&mut self, process: &ProcessId, entries: &[FdSnapshotEntry]) {
+        let process_state = self.ensure_process(process);
+        for entry in entries {
+            process_state.fd_table.insert_if_absent(
+                entry.fd,
+                RuntimeObject::UnknownFd {
+                    description: entry.description.clone(),
+                },
+            );
+        }
     }
 
     pub fn map_pipe(&mut self, process: &ProcessId, pipe: PipeId, read_fd: Fd, write_fd: Fd) {

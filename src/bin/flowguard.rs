@@ -272,6 +272,16 @@ fn format_observed_event(observed: &ObservedEvent) -> String {
                 path.display()
             )
         }
+        Event::FdSnapshot {
+            process, entries, ..
+        } => {
+            format!(
+                "FD_SNAPSHOT proc:{}@{} entries:{}",
+                process.pid,
+                process.start_time.0,
+                entries.len()
+            )
+        }
         Event::SocketCreate {
             process,
             fd,
@@ -320,6 +330,7 @@ fn format_node(graph: &ProvenanceGraph, node_id: flowguard::graph::NodeId) -> St
         Some(Node::Pipe { pipe }) => format!("pipe:{}", pipe.0),
         Some(Node::Socket { socket }) => format!("socket:{}", socket.0),
         Some(Node::Endpoint(endpoint)) => format!("endpoint:{}:{}", endpoint.host, endpoint.port),
+        Some(Node::UnknownFd { description }) => format!("unknown-fd:{description}"),
         None => format!("node:{}", node_id.0),
     }
 }

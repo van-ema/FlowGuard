@@ -6,7 +6,9 @@ use std::net::Ipv6Addr;
 use std::path::PathBuf;
 use std::ptr;
 
-use crate::events::{Endpoint, Event, Fd, PipeId, ProcessId, StartTime, Timestamp};
+use crate::events::{
+    Endpoint, Event, Fd, FdSnapshotEntry, PipeId, ProcessId, StartTime, Timestamp,
+};
 use crate::protect::ProtectRun;
 use crate::scenarios::{ReplaySession, Scenario};
 use crate::state::RuntimeObject;
@@ -20,7 +22,9 @@ const PTRACE_GETREGS: c_uint = 12;
 const PTRACE_SYSCALL: c_uint = 24;
 const PTRACE_SETOPTIONS: c_uint = 0x4200;
 const PTRACE_GETEVENTMSG: c_uint = 0x4201;
+#[cfg(target_arch = "aarch64")]
 const PTRACE_GETREGSET: c_uint = 0x4204;
+#[cfg(target_arch = "aarch64")]
 const NT_PRSTATUS: c_ulong = 1;
 
 const PTRACE_O_TRACESYSGOOD: c_ulong = 0x00000001;
@@ -261,6 +265,7 @@ impl LiveTracer {
         self.ensure_process(self.root_pid, Some(self.root_command.clone()));
         self.threads.entry(self.root_pid).or_default();
         set_ptrace_options(self.root_pid)?;
+        self.snapshot_fds(self.root_pid);
         resume_syscall(self.root_pid, 0)?;
 
         loop {
@@ -323,6 +328,7 @@ impl LiveTracer {
             if signal == SIGSTOP {
                 self.threads.entry(pid).or_default();
                 let _ = set_ptrace_options(pid);
+                self.snapshot_fds(pid);
                 resume_syscall(pid, 0)?;
                 continue;
             }
@@ -352,6 +358,7 @@ impl LiveTracer {
         }
 
         let new_pid = get_event_msg(pid)? as Pid;
+        self.snapshot_fds(pid);
         let parent = self.ensure_process(pid, None);
         let child = self.next_process_identity(new_pid);
         self.processes.insert(new_pid, child.clone());
@@ -363,6 +370,7 @@ impl LiveTracer {
             child,
             at: self.next_timestamp(),
         });
+        self.snapshot_fds(new_pid);
         Ok(())
     }
 
@@ -566,6 +574,20 @@ impl LiveTracer {
             at: self.next_timestamp(),
         });
         process
+    }
+
+    fn snapshot_fds(&mut self, pid: Pid) {
+        let entries = snapshot_fd_entries(pid);
+        if entries.is_empty() {
+            return;
+        }
+
+        let process = self.ensure_process(pid, None);
+        self.emit(Event::FdSnapshot {
+            process,
+            entries,
+            at: self.next_timestamp(),
+        });
     }
 
     fn next_process_identity(&mut self, pid: Pid) -> ProcessId {
@@ -833,6 +855,33 @@ fn read_proc_start_time(pid: Pid) -> Option<u64> {
     after_comm.split_whitespace().nth(19)?.parse().ok()
 }
 
+fn snapshot_fd_entries(pid: Pid) -> Vec<FdSnapshotEntry> {
+    let Ok(entries) = fs::read_dir(format!("/proc/{pid}/fd")) else {
+        return Vec::new();
+    };
+
+    let mut snapshot = Vec::new();
+    for entry in entries.flatten() {
+        let Some(fd) = entry
+            .file_name()
+            .to_str()
+            .and_then(|value| value.parse::<i32>().ok())
+        else {
+            continue;
+        };
+        let target = fs::read_link(entry.path())
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|_| "<unknown>".to_string());
+
+        snapshot.push(FdSnapshotEntry {
+            fd: Fd(fd),
+            description: format!("pid:{pid} fd:{fd} target:{target}"),
+        });
+    }
+    snapshot.sort_by_key(|entry| entry.fd.0);
+    snapshot
+}
+
 fn current_errno() -> c_int {
     unsafe { *__errno_location() }
 }
@@ -873,7 +922,7 @@ fn ptrace_event(status: c_int) -> c_int {
 mod tests {
     use crate::events::Endpoint;
 
-    use super::{AF_INET, read_proc_start_time};
+    use super::{AF_INET, read_proc_start_time, snapshot_fd_entries};
 
     #[test]
     fn parses_current_process_start_time() {
@@ -886,5 +935,19 @@ mod tests {
     fn sockaddr_ipv4_constants_match_linux_layout() {
         assert_eq!(AF_INET, 2);
         assert_eq!(Endpoint::tcp("127.0.0.1", 80).host, "127.0.0.1");
+    }
+
+    #[test]
+    fn snapshots_current_process_fds() {
+        let pid = std::process::id() as i32;
+
+        let entries = snapshot_fd_entries(pid);
+
+        assert!(!entries.is_empty());
+        assert!(
+            entries
+                .iter()
+                .all(|entry| entry.description.contains("target:"))
+        );
     }
 }

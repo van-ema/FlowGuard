@@ -84,6 +84,12 @@ impl Endpoint {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FdSnapshotEntry {
+    pub fd: Fd,
+    pub description: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Event {
     AgentLaunch {
         process: ProcessId,
@@ -111,6 +117,11 @@ pub enum Event {
         process: ProcessId,
         fd: Fd,
         path: PathBuf,
+        at: Timestamp,
+    },
+    FdSnapshot {
+        process: ProcessId,
+        entries: Vec<FdSnapshotEntry>,
         at: Timestamp,
     },
     Pipe {
