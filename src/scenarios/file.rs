@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 
 use crate::events::{
-    AddressFamily, Endpoint, Event, Fd, PipeId, ProcessId, SocketLevel, SocketOption,
-    SocketProtocol, SocketType, StartTime, Timestamp,
+    AddressFamily, Endpoint, Event, Fd, FdSnapshotEntry, PipeId, ProcessId, SocketLevel,
+    SocketOption, SocketProtocol, SocketType, StartTime, Timestamp,
 };
 
 use super::Scenario;
@@ -74,6 +74,11 @@ enum ScenarioEvent {
         process: ScenarioProcess,
         fd: i32,
         path: PathBuf,
+        at: u64,
+    },
+    FdSnapshot {
+        process: ScenarioProcess,
+        entries: Vec<ScenarioFdSnapshotEntry>,
         at: u64,
     },
     Pipe {
@@ -162,6 +167,12 @@ struct ScenarioProcess {
 struct ScenarioEndpoint {
     host: String,
     port: u16,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+struct ScenarioFdSnapshotEntry {
+    fd: i32,
+    description: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
@@ -273,6 +284,15 @@ impl ScenarioEvent {
                 process: process.into(),
                 fd: Fd(fd),
                 path,
+                at: Timestamp(at),
+            },
+            Self::FdSnapshot {
+                process,
+                entries,
+                at,
+            } => Event::FdSnapshot {
+                process: process.into(),
+                entries: entries.into_iter().map(FdSnapshotEntry::from).collect(),
                 at: Timestamp(at),
             },
             Self::Pipe {
@@ -422,6 +442,15 @@ impl From<ScenarioEndpoint> for Endpoint {
     }
 }
 
+impl From<ScenarioFdSnapshotEntry> for FdSnapshotEntry {
+    fn from(value: ScenarioFdSnapshotEntry) -> Self {
+        Self {
+            fd: Fd(value.fd),
+            description: value.description,
+        }
+    }
+}
+
 impl From<ScenarioAddressFamily> for AddressFamily {
     fn from(value: ScenarioAddressFamily) -> Self {
         match value {
@@ -546,6 +575,36 @@ events:
             }
         ));
         assert!(matches!(&scenario.events[2].event, Event::Splice { .. }));
+    }
+
+    #[test]
+    fn loads_fd_snapshot_from_yaml() {
+        let scenario = load_yaml_str(
+            r#"
+name: fd_snapshot
+events:
+  - type: fd_snapshot
+    process:
+      pid: 42
+      start_time: 100
+    entries:
+      - fd: 2
+        description: "pid:42 fd:2 target:/dev/null"
+      - fd: 4
+        description: "pid:42 fd:4 target:socket:[123]"
+    at: 1
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(scenario.events.len(), 1);
+        assert!(matches!(
+            &scenario.events[0].event,
+            Event::FdSnapshot { entries, .. }
+                if entries.len() == 2
+                    && entries[0].fd == crate::events::Fd(2)
+                    && entries[1].description == "pid:42 fd:4 target:socket:[123]"
+        ));
     }
 
     #[test]

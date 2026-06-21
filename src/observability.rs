@@ -310,6 +310,14 @@ pub fn format_observed_event(observed: &ObservedEvent) -> String {
             fd.0,
             path.display()
         ),
+        Event::FdSnapshot {
+            process, entries, ..
+        } => format!(
+            "FD_SNAPSHOT proc:{}@{} entries:{}",
+            process.pid,
+            process.start_time.0,
+            entries.len()
+        ),
         Event::Pipe {
             process,
             pipe,
@@ -420,6 +428,7 @@ pub fn format_node(node: &Node) -> String {
         Node::Pipe { pipe } => format!("pipe:{}", pipe.0),
         Node::Socket { socket } => format!("socket:{}", socket.0),
         Node::Endpoint(endpoint) => format!("endpoint:{}:{}", endpoint.host, endpoint.port),
+        Node::UnknownFd { description } => format!("unknown-fd:{description}"),
     }
 }
 
@@ -462,6 +471,7 @@ fn event_kind(event: &Event) -> &'static str {
         Event::Fork { .. } => "Fork",
         Event::Exec { .. } => "Exec",
         Event::Open { .. } => "Open",
+        Event::FdSnapshot { .. } => "FdSnapshot",
         Event::Pipe { .. } => "Pipe",
         Event::Dup { .. } => "Dup",
         Event::Close { .. } => "Close",
@@ -484,6 +494,7 @@ fn node_kind(node: &Node) -> &'static str {
         Node::Pipe { .. } => "Pipe",
         Node::Socket { .. } => "Socket",
         Node::Endpoint(_) => "Endpoint",
+        Node::UnknownFd { .. } => "UnknownFd",
     }
 }
 

@@ -28,6 +28,7 @@ pub enum Node {
     Pipe { pipe: PipeId },
     Socket { socket: SocketId },
     Endpoint(Endpoint),
+    UnknownFd { description: String },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -65,6 +66,9 @@ impl ProvenanceGraph {
                 self.ensure_node(Node::Pipe { pipe: *pipe })
             }
             RuntimeObject::Socket { socket } => self.ensure_node(Node::Socket { socket: *socket }),
+            RuntimeObject::UnknownFd { description } => self.ensure_node(Node::UnknownFd {
+                description: description.clone(),
+            }),
         }
     }
 

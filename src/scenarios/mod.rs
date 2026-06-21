@@ -247,6 +247,12 @@ impl ReplaySession {
                     self.blocked_event = Some(observed.clone());
                 }
             }
+            Event::FdSnapshot {
+                process, entries, ..
+            } => {
+                self.runtime.snapshot_fds(process, entries);
+                effect.sink_node = Some(self.graph.process_node(process));
+            }
             Event::Pipe {
                 process,
                 pipe,
@@ -549,7 +555,7 @@ fn is_secret_path(path: &std::path::Path) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use crate::events::{Endpoint, Event, Fd, ProcessId, StartTime, Timestamp};
+    use crate::events::{Endpoint, Event, Fd, FdSnapshotEntry, ProcessId, StartTime, Timestamp};
     use crate::graph::{EdgeKind, Node};
     use crate::policy::DecisionKind;
 
@@ -592,6 +598,134 @@ mod tests {
         assert_eq!(
             outcome.graph.nodes.get(&edge.to),
             Some(&Node::Endpoint(endpoint))
+        );
+    }
+
+    #[test]
+    fn fd_snapshot_seeds_missing_fds_without_graph_edges() {
+        let process = ProcessId::new(42, StartTime(100));
+        let scenario = Scenario::new(
+            "fd_snapshot_close",
+            vec![
+                Event::AgentLaunch {
+                    process: process.clone(),
+                    command: vec!["agent".into()],
+                    at: Timestamp(1),
+                },
+                Event::FdSnapshot {
+                    process: process.clone(),
+                    entries: vec![FdSnapshotEntry {
+                        fd: Fd(2),
+                        description: "pid:42 fd:2 target:/dev/null".into(),
+                    }],
+                    at: Timestamp(2),
+                },
+                Event::Close {
+                    process,
+                    fd: Fd(2),
+                    at: Timestamp(3),
+                },
+            ],
+        );
+
+        let outcome = ScenarioRunner::new().run(&scenario);
+
+        assert!(outcome.warnings.is_empty());
+        assert!(outcome.graph.edges.is_empty());
+        assert_eq!(outcome.records.len(), 3);
+        assert!(outcome.records[1].edge_id.is_none());
+        assert!(outcome.records[2].edge_id.is_none());
+    }
+
+    #[test]
+    fn fd_snapshot_does_not_overwrite_precise_fd_mapping() {
+        let process = ProcessId::new(42, StartTime(100));
+        let path = std::path::PathBuf::from("/home/user/.ssh/id_rsa");
+        let scenario = Scenario::new(
+            "fd_snapshot_preserves_precise_open",
+            vec![
+                Event::AgentLaunch {
+                    process: process.clone(),
+                    command: vec!["agent".into()],
+                    at: Timestamp(1),
+                },
+                Event::Open {
+                    process: process.clone(),
+                    fd: Fd(3),
+                    path: path.clone(),
+                    at: Timestamp(2),
+                },
+                Event::FdSnapshot {
+                    process: process.clone(),
+                    entries: vec![FdSnapshotEntry {
+                        fd: Fd(3),
+                        description: "pid:42 fd:3 target:<unknown>".into(),
+                    }],
+                    at: Timestamp(3),
+                },
+                Event::Read {
+                    process,
+                    fd: Fd(3),
+                    len: 32,
+                    at: Timestamp(4),
+                },
+            ],
+        );
+
+        let outcome = ScenarioRunner::new().run(&scenario);
+
+        assert!(outcome.warnings.is_empty());
+        assert_eq!(outcome.graph.edges.len(), 1);
+        let edge = &outcome.graph.edges[0];
+        assert_eq!(edge.kind, EdgeKind::Read);
+        assert_eq!(
+            outcome.graph.nodes.get(&edge.from),
+            Some(&Node::File { path })
+        );
+    }
+
+    #[test]
+    fn fd_snapshot_unknown_read_records_unknown_fd_node() {
+        let process = ProcessId::new(42, StartTime(100));
+        let description = "pid:42 fd:7 target:socket:[123]".to_string();
+        let scenario = Scenario::new(
+            "fd_snapshot_unknown_read",
+            vec![
+                Event::AgentLaunch {
+                    process: process.clone(),
+                    command: vec!["agent".into()],
+                    at: Timestamp(1),
+                },
+                Event::FdSnapshot {
+                    process: process.clone(),
+                    entries: vec![FdSnapshotEntry {
+                        fd: Fd(7),
+                        description: description.clone(),
+                    }],
+                    at: Timestamp(2),
+                },
+                Event::Read {
+                    process: process.clone(),
+                    fd: Fd(7),
+                    len: 32,
+                    at: Timestamp(3),
+                },
+            ],
+        );
+
+        let outcome = ScenarioRunner::new().run(&scenario);
+
+        assert!(outcome.warnings.is_empty());
+        assert_eq!(outcome.graph.edges.len(), 1);
+        let edge = &outcome.graph.edges[0];
+        assert_eq!(edge.kind, EdgeKind::Read);
+        assert_eq!(
+            outcome.graph.nodes.get(&edge.from),
+            Some(&Node::UnknownFd { description })
+        );
+        assert_eq!(
+            outcome.graph.nodes.get(&edge.to),
+            Some(&Node::Process(process))
         );
     }
 
