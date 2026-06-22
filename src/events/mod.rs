@@ -101,6 +101,11 @@ pub enum Event {
         reason: String,
         at: Timestamp,
     },
+    DeclassificationGranted {
+        process: ProcessId,
+        reason: String,
+        at: Timestamp,
+    },
     Fork {
         parent: ProcessId,
         child: ProcessId,

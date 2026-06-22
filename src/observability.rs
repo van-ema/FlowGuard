@@ -215,15 +215,15 @@ fn node_label_reports(graph: &ProvenanceGraph, labels: &LabelState) -> Vec<NodeL
     labels
         .by_node
         .iter()
-        .map(|(node_id, label_set)| NodeLabelReport {
+        .map(|(node_id, _label_set)| NodeLabelReport {
             node: node_id.0,
             node_display: graph
                 .nodes
                 .get(node_id)
                 .map(format_node)
                 .unwrap_or_else(|| format!("node:{}", node_id.0)),
-            labels: label_set
-                .labels
+            labels: labels
+                .active_labels_for(*node_id)
                 .iter()
                 .map(|label| label_name(*label).to_string())
                 .collect(),
@@ -287,6 +287,12 @@ pub fn format_observed_event(observed: &ObservedEvent) -> String {
             process, reason, ..
         } => format!(
             "APPROVAL_GRANTED proc:{}@{} reason:{}",
+            process.pid, process.start_time.0, reason
+        ),
+        Event::DeclassificationGranted {
+            process, reason, ..
+        } => format!(
+            "DECLASSIFICATION_GRANTED proc:{}@{} reason:{}",
             process.pid, process.start_time.0, reason
         ),
         Event::Fork { parent, child, .. } => format!(
@@ -468,6 +474,7 @@ fn event_kind(event: &Event) -> &'static str {
     match event {
         Event::AgentLaunch { .. } => "AgentLaunch",
         Event::ApprovalGranted { .. } => "ApprovalGranted",
+        Event::DeclassificationGranted { .. } => "DeclassificationGranted",
         Event::Fork { .. } => "Fork",
         Event::Exec { .. } => "Exec",
         Event::Open { .. } => "Open",

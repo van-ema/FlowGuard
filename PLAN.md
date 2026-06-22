@@ -234,12 +234,14 @@ Context events:
 - `ToolUseEnd`: task id, tool id, process identity, exit status
 - `AgentMessage`: task id, message hash and direction, not full prompt text by default
 - `ApprovalGranted`: scoped approval for one policy/action/sink
+- `DeclassificationGranted`: explicit approved trust boundary that suppresses existing process `Secret` taint for future propagation
 
 Rules:
 
 - context can narrow explanations and approval scope
 - context cannot create provenance edges by itself
-- context cannot override deterministic blocks such as `SECRET -> SEND`
+- normal context metadata cannot override deterministic blocks such as `SECRET -> SEND`
+- `DeclassificationGranted` is a separate explicit control event; it does not prove byte independence, and a later secret read re-taints the process
 - full task text should be optional and treated as untrusted metadata
 
 ## Precision Track: DynamoRIO Tainted-Buffer POC

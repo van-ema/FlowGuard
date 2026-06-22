@@ -58,6 +58,11 @@ enum ScenarioEvent {
         reason: String,
         at: u64,
     },
+    DeclassificationGranted {
+        process: ScenarioProcess,
+        reason: String,
+        at: u64,
+    },
     Fork {
         parent: ScenarioProcess,
         child: ScenarioProcess,
@@ -253,6 +258,15 @@ impl ScenarioEvent {
                 reason,
                 at,
             } => Event::ApprovalGranted {
+                process: process.into(),
+                reason,
+                at: Timestamp(at),
+            },
+            Self::DeclassificationGranted {
+                process,
+                reason,
+                at,
+            } => Event::DeclassificationGranted {
                 process: process.into(),
                 reason,
                 at: Timestamp(at),
@@ -608,6 +622,30 @@ events:
     }
 
     #[test]
+    fn loads_declassification_from_yaml() {
+        let scenario = load_yaml_str(
+            r#"
+name: declassification_event
+events:
+  - type: declassification_granted
+    process:
+      pid: 42
+      start_time: 100
+    reason: "approved constant telemetry after scrub"
+    at: 1
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(scenario.events.len(), 1);
+        assert!(matches!(
+            &scenario.events[0].event,
+            Event::DeclassificationGranted { reason, .. }
+                if reason == "approved constant telemetry after scrub"
+        ));
+    }
+
+    #[test]
     fn copy_fail_yaml_blocks_af_alg_socket_create() {
         let scenario = load_yaml_file("scenarios/copy_fail.yaml").unwrap();
 
@@ -686,6 +724,43 @@ events:
         assert_eq!(scenario.name, "benign_external_download");
         assert_eq!(outcome.enforcement.decision.kind, DecisionKind::Allow);
         assert!(outcome.enforcement.decision.violations.is_empty());
+    }
+
+    #[test]
+    fn false_positive_secret_unrelated_send_yaml_blocks_without_declassification() {
+        let scenario =
+            load_yaml_file("scenarios/false_positive_secret_then_unrelated_send.yaml").unwrap();
+
+        let outcome = ScenarioRunner::new().run(&scenario);
+
+        assert_eq!(scenario.name, "false_positive_secret_then_unrelated_send");
+        assert_eq!(outcome.enforcement.decision.kind, DecisionKind::Block);
+        assert_eq!(
+            outcome.enforcement.decision.violations[0].policy,
+            PolicyId::SecretToNetwork
+        );
+    }
+
+    #[test]
+    fn false_positive_secret_unrelated_send_yaml_allows_after_declassification() {
+        let scenario =
+            load_yaml_file("scenarios/false_positive_secret_then_unrelated_send_declassified.yaml")
+                .unwrap();
+
+        let outcome = ScenarioRunner::new().run(&scenario);
+
+        assert_eq!(
+            scenario.name,
+            "false_positive_secret_then_unrelated_send_declassified"
+        );
+        assert_eq!(outcome.enforcement.decision.kind, DecisionKind::Allow);
+        assert!(outcome.enforcement.decision.violations.is_empty());
+        assert_eq!(outcome.records.len(), scenario.events.len());
+        assert!(matches!(
+            &outcome.records[3].observed.event,
+            Event::DeclassificationGranted { .. }
+        ));
+        assert!(outcome.records[3].edge_id.is_none());
     }
 
     #[test]

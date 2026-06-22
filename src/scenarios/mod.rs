@@ -145,6 +145,11 @@ impl ReplaySession {
                 self.labels.seed(process_node, Label::Approved);
                 effect.sink_node = Some(process_node);
             }
+            Event::DeclassificationGranted { process, .. } => {
+                let process_node = self.graph.process_node(process);
+                self.labels.declassify(process_node, Label::Secret);
+                effect.sink_node = Some(process_node);
+            }
             Event::Fork { parent, child, at } => {
                 if let Err(err) = self.runtime.fork_process(parent, child) {
                     self.warn_state_error(observed, err);
@@ -557,6 +562,7 @@ fn is_secret_path(path: &std::path::Path) -> bool {
 mod tests {
     use crate::events::{Endpoint, Event, Fd, FdSnapshotEntry, ProcessId, StartTime, Timestamp};
     use crate::graph::{EdgeKind, Node};
+    use crate::labels::Label;
     use crate::policy::DecisionKind;
 
     use super::{ReplaySession, Scenario, ScenarioRunner};
@@ -726,6 +732,135 @@ mod tests {
         assert_eq!(
             outcome.graph.nodes.get(&edge.to),
             Some(&Node::Process(process))
+        );
+    }
+
+    #[test]
+    fn declassification_suppresses_secret_for_later_send() {
+        let process = ProcessId::new(42, StartTime(100));
+        let endpoint = Endpoint::tcp("telemetry.example", 443);
+        let scenario = Scenario::new(
+            "declassified_unrelated_send",
+            vec![
+                Event::AgentLaunch {
+                    process: process.clone(),
+                    command: vec!["agent".into()],
+                    at: Timestamp(1),
+                },
+                Event::Open {
+                    process: process.clone(),
+                    fd: Fd(3),
+                    path: "/home/user/.ssh/id_rsa".into(),
+                    at: Timestamp(2),
+                },
+                Event::Read {
+                    process: process.clone(),
+                    fd: Fd(3),
+                    len: 128,
+                    at: Timestamp(3),
+                },
+                Event::DeclassificationGranted {
+                    process: process.clone(),
+                    reason: "approved constant telemetry after scrub".into(),
+                    at: Timestamp(4),
+                },
+                Event::Connect {
+                    process: process.clone(),
+                    fd: Fd(4),
+                    endpoint,
+                    at: Timestamp(5),
+                },
+                Event::Send {
+                    process: process.clone(),
+                    fd: Fd(4),
+                    len: 2,
+                    at: Timestamp(6),
+                },
+            ],
+        );
+
+        let outcome = ScenarioRunner::new().run(&scenario);
+
+        assert_eq!(outcome.enforcement.decision.kind, DecisionKind::Allow);
+        assert!(outcome.enforcement.decision.violations.is_empty());
+        assert_eq!(outcome.graph.edges.len(), 3);
+        assert!(outcome.records[3].edge_id.is_none());
+        let process_node = outcome
+            .graph
+            .nodes
+            .iter()
+            .find_map(|(node_id, node)| {
+                if node == &Node::Process(process.clone()) {
+                    Some(*node_id)
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        assert!(!outcome.labels.has_label(process_node, Label::Secret));
+    }
+
+    #[test]
+    fn secret_read_after_declassification_retaints_and_blocks() {
+        let process = ProcessId::new(42, StartTime(100));
+        let endpoint = Endpoint::tcp("evil.example", 443);
+        let scenario = Scenario::new(
+            "declassification_then_new_secret_read",
+            vec![
+                Event::AgentLaunch {
+                    process: process.clone(),
+                    command: vec!["agent".into()],
+                    at: Timestamp(1),
+                },
+                Event::Open {
+                    process: process.clone(),
+                    fd: Fd(3),
+                    path: "/home/user/.ssh/id_rsa".into(),
+                    at: Timestamp(2),
+                },
+                Event::Read {
+                    process: process.clone(),
+                    fd: Fd(3),
+                    len: 128,
+                    at: Timestamp(3),
+                },
+                Event::DeclassificationGranted {
+                    process: process.clone(),
+                    reason: "approved constant telemetry after scrub".into(),
+                    at: Timestamp(4),
+                },
+                Event::Read {
+                    process: process.clone(),
+                    fd: Fd(3),
+                    len: 64,
+                    at: Timestamp(5),
+                },
+                Event::Connect {
+                    process: process.clone(),
+                    fd: Fd(4),
+                    endpoint,
+                    at: Timestamp(6),
+                },
+                Event::Send {
+                    process,
+                    fd: Fd(4),
+                    len: 64,
+                    at: Timestamp(7),
+                },
+            ],
+        );
+
+        let outcome = ScenarioRunner::new().run(&scenario);
+
+        assert_eq!(outcome.enforcement.decision.kind, DecisionKind::Block);
+        assert_eq!(outcome.explanations.len(), 1);
+        let first_explanation_edge = outcome.explanations[0].path[0].via_edge;
+        assert_eq!(
+            outcome
+                .graph
+                .edge(first_explanation_edge)
+                .map(|edge| edge.event_sequence),
+            Some(4)
         );
     }
 

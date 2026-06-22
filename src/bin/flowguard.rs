@@ -272,6 +272,14 @@ fn format_observed_event(observed: &ObservedEvent) -> String {
                 path.display()
             )
         }
+        Event::DeclassificationGranted {
+            process, reason, ..
+        } => {
+            format!(
+                "DECLASSIFICATION_GRANTED proc:{}@{} reason:{}",
+                process.pid, process.start_time.0, reason
+            )
+        }
         Event::FdSnapshot {
             process, entries, ..
         } => {
