@@ -1,5 +1,7 @@
 # Design: Syscall-Level Provenance for Agent Security
 
+This document describes the low-level syscall provenance layer. For the updated product goal and trusted-runtime architecture, see [Flowguard Vision and Design](flowguard-vision-design.md).
+
 ## Problem
 
 AI agents execute actions that can:
