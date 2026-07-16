@@ -40,7 +40,8 @@ class FlowguardTool:
         )
 
         try:
-            result = self._func(*args, **kwargs)
+            with self._runtime.protect():
+                result = self._func(*args, **kwargs)
         except Exception as err:
             self._runtime.emitter.emit(
                 "tool_error",
@@ -61,4 +62,3 @@ class FlowguardTool:
         from .adapters.openai_agents import as_openai_tool
 
         return as_openai_tool(self)
-

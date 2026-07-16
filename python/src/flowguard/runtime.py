@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import builtins
+import os
 from pathlib import Path
 from typing import IO, Any, Protocol
 from urllib import request
@@ -10,6 +12,8 @@ from .exceptions import FlowguardBlocked
 from .provenance import SECRET_LABEL, Provenance, SourceRef
 from .tracked import provenance_of, track_value
 from .tools import FlowguardTool
+
+_REAL_OPEN = builtins.open
 
 
 class FlowguardRuntime:
@@ -28,6 +32,11 @@ class FlowguardRuntime:
 
     def open(self, path: str | Path, mode: str = "r", **kwargs: Any) -> GuardedFile:
         return GuardedFile(self, path, mode, **kwargs)
+
+    def protect(self) -> Any:
+        from .protect import ProtectionContext
+
+        return ProtectionContext(self)
 
     def tool(
         self,
@@ -61,6 +70,9 @@ class FlowguardRuntime:
             return Decision.block_secret_to_network(target, provenance)
         return None
 
+    def block_unbrokered_subprocess(self, api: str) -> Decision:
+        return Decision.block_unbrokered_subprocess(api)
+
 
 class GuardedFile:
     def __init__(
@@ -71,8 +83,8 @@ class GuardedFile:
         **kwargs: Any,
     ) -> None:
         self._runtime = runtime
-        self._path = Path(path)
-        self._handle: IO[Any] = open(self._path, mode, **kwargs)
+        self._path = Path(os.fsdecode(path))
+        self._handle: IO[Any] = _REAL_OPEN(self._path, mode, **kwargs)
 
     def read(self, *args: Any, **kwargs: Any) -> Any:
         value = self._handle.read(*args, **kwargs)

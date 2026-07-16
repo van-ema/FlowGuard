@@ -1,4 +1,5 @@
 from .exceptions import FlowguardBlocked
+from .protect import ProtectionContext
 from .provenance import Provenance, SourceRef
 from .runtime import FlowguardRuntime
 from .tracked import TrackedBytes, TrackedStr
@@ -8,6 +9,7 @@ __all__ = [
     "FlowguardBlocked",
     "FlowguardRuntime",
     "FlowguardTool",
+    "ProtectionContext",
     "Provenance",
     "SourceRef",
     "TrackedBytes",
