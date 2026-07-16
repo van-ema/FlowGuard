@@ -9,6 +9,7 @@ from .emitter import EventEmitter
 from .exceptions import FlowguardBlocked
 from .provenance import SECRET_LABEL, Provenance, SourceRef
 from .tracked import provenance_of, track_value
+from .tools import FlowguardTool
 
 
 class FlowguardRuntime:
@@ -27,6 +28,25 @@ class FlowguardRuntime:
 
     def open(self, path: str | Path, mode: str = "r", **kwargs: Any) -> GuardedFile:
         return GuardedFile(self, path, mode, **kwargs)
+
+    def tool(
+        self,
+        func: Any | None = None,
+        *,
+        name: str | None = None,
+        description: str | None = None,
+    ) -> Any:
+        def decorate(wrapped: Any) -> FlowguardTool:
+            return FlowguardTool(
+                self,
+                wrapped,
+                name=name,
+                description=description,
+            )
+
+        if func is None:
+            return decorate
+        return decorate(func)
 
     def is_secret_path(self, path: str | Path) -> bool:
         candidate = _normalize_path(path)
