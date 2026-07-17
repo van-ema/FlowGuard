@@ -1,4 +1,5 @@
 from .exceptions import FlowguardBlocked
+from .executor import GeneratedCodeResult
 from .protect import ProtectionContext
 from .provenance import Provenance, SourceRef
 from .runtime import FlowguardRuntime
@@ -9,6 +10,7 @@ __all__ = [
     "FlowguardBlocked",
     "FlowguardRuntime",
     "FlowguardTool",
+    "GeneratedCodeResult",
     "ProtectionContext",
     "Provenance",
     "SourceRef",
