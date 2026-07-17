@@ -24,3 +24,15 @@ class Decision:
             provenance=provenance,
         )
 
+    @classmethod
+    def block_unbrokered_subprocess(cls, api: str) -> "Decision":
+        return cls(
+            kind="Block",
+            policy="UnbrokeredSubprocess",
+            target=api,
+            explanation=(
+                f"Subprocess execution through {api} is blocked inside "
+                "Flowguard protect(); use a brokered subprocess boundary."
+            ),
+            provenance=Provenance.empty(),
+        )
