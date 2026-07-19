@@ -38,6 +38,16 @@ class FlowguardRuntime:
 
         return ProtectionContext(self)
 
+    def run_python(
+        self,
+        code: str,
+        *,
+        inputs: dict[str, Any] | None = None,
+    ) -> Any:
+        from .executor import run_python
+
+        return run_python(self, code, inputs=inputs)
+
     def tool(
         self,
         func: Any | None = None,
