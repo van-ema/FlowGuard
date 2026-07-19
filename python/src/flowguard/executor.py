@@ -112,16 +112,22 @@ def _execution_globals(inputs: dict[str, Any]) -> dict[str, Any]:
 
 
 def _instrument_generated_code(tree: ast.Module) -> ast.Module:
-    return ast.fix_missing_locations(_GeneratedCodeInstrumenter().visit(tree))
+    instrumented = _GeneratedCodeInstrumenter().visit(tree)
+    # New AST nodes need line and column data before compile() accepts the tree.
+    return ast.fix_missing_locations(instrumented)
 
 
 class _GeneratedCodeInstrumenter(ast.NodeTransformer):
+    """Rewrites generated code so tainted values survive string formatting."""
+
     def visit_JoinedStr(self, node: ast.JoinedStr) -> ast.AST:
         parts: list[ast.AST] = []
         for value in node.values:
             if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                # Literal f-string text has no taint to preserve.
                 parts.append(value)
             elif isinstance(value, ast.FormattedValue):
+                # format(value) normally returns plain str and drops taint.
                 parts.append(
                     ast.Call(
                         func=ast.Name(id="__flowguard_format_value", ctx=ast.Load()),
@@ -132,6 +138,7 @@ class _GeneratedCodeInstrumenter(ast.NodeTransformer):
             else:
                 parts.append(self.visit(value))
 
+        # Replace the f-string with a helper that joins text and merges provenance.
         return ast.copy_location(
             ast.Call(
                 func=ast.Name(id="__flowguard_joined_str", ctx=ast.Load()),
@@ -143,6 +150,8 @@ class _GeneratedCodeInstrumenter(ast.NodeTransformer):
 
 
 def _flowguard_format_value(value: Any) -> Any:
+    """Formats one f-string value without losing its provenance."""
+
     provenance = provenance_of(value)
     text = format(value)
     if provenance.labels or provenance.sources:
@@ -151,6 +160,8 @@ def _flowguard_format_value(value: Any) -> Any:
 
 
 def _flowguard_joined_str(parts: list[Any]) -> Any:
+    """Joins rewritten f-string parts and keeps merged provenance."""
+
     text = "".join(str(part) for part in parts)
     provenance = provenance_of(parts)
     if provenance.labels or provenance.sources:
