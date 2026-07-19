@@ -38,6 +38,7 @@ def main() -> int:
 
         run_blocked_case(runtime, secret_path)
         run_allowed_case(runtime, secret_path)
+        write_report(runtime)
         return 0
 
 
@@ -88,6 +89,16 @@ def run_allowed_case(runtime: FlowguardRuntime, secret_path: Path) -> None:
         assert len(calls) == 1
     finally:
         request.urlopen = original_urlopen
+
+
+def write_report(runtime: FlowguardRuntime) -> None:
+    report = runtime.report()
+    report_path = Path("logs") / "generated-code-flowguard.report.json"
+    events_path = Path("logs") / "generated-code-flowguard.events.jsonl"
+    report.write_json(report_path)
+    report.write_jsonl(events_path)
+    print(f"report_json={report_path}")
+    print(f"events_jsonl={events_path}")
 
 
 if __name__ == "__main__":

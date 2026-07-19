@@ -154,6 +154,7 @@ class ProtectionContext:
             "http_send_attempt",
             url=target,
             labels=sorted(provenance.labels),
+            sources=[source.display() for source in provenance.sources],
             api=api,
         )
 
@@ -164,11 +165,19 @@ class ProtectionContext:
                 url=target,
                 policy=decision.policy,
                 explanation=decision.explanation,
+                labels=sorted(provenance.labels),
+                sources=[source.display() for source in provenance.sources],
                 api=api,
             )
             raise FlowguardBlocked(decision)
 
-        self._runtime.emitter.emit("http_send_allowed", url=target, api=api)
+        self._runtime.emitter.emit(
+            "http_send_allowed",
+            url=target,
+            labels=sorted(provenance.labels),
+            sources=[source.display() for source in provenance.sources],
+            api=api,
+        )
 
     def _patch_subprocess(self) -> None:
         for name in ("Popen", "run", "call", "check_call", "check_output"):

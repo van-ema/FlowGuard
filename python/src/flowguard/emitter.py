@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,7 @@ class EventEmitter:
     def emit(self, event_type: str, **details: Any) -> dict[str, Any]:
         record = {
             "sequence": len(self.events),
+            "timestamp": _utc_now(),
             "type": event_type,
             "details": details,
         }
@@ -26,3 +28,9 @@ class EventEmitter:
 
         return record
 
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="microseconds").replace(
+        "+00:00",
+        "Z",
+    )

@@ -83,6 +83,11 @@ class FlowguardRuntime:
     def block_unbrokered_subprocess(self, api: str) -> Decision:
         return Decision.block_unbrokered_subprocess(api)
 
+    def report(self) -> "FlowguardReport":
+        from .report import FlowguardReport
+
+        return FlowguardReport.from_events(self.emitter.events)
+
 
 class GuardedFile:
     def __init__(
@@ -158,6 +163,7 @@ class GuardedHttpClient:
             "http_send_attempt",
             url=url,
             labels=sorted(provenance.labels),
+            sources=_provenance_sources(provenance),
         )
 
         decision = self._runtime.check_network_egress(url, data)
@@ -167,10 +173,17 @@ class GuardedHttpClient:
                 url=url,
                 policy=decision.policy,
                 explanation=decision.explanation,
+                labels=sorted(provenance.labels),
+                sources=_provenance_sources(provenance),
             )
             raise FlowguardBlocked(decision)
 
-        self._runtime.emitter.emit("http_send_allowed", url=url)
+        self._runtime.emitter.emit(
+            "http_send_allowed",
+            url=url,
+            labels=sorted(provenance.labels),
+            sources=_provenance_sources(provenance),
+        )
         return self._transport.post(url, data=data, **kwargs)
 
 
@@ -184,3 +197,7 @@ def _is_child_path(candidate: Path, parent: Path) -> bool:
     except ValueError:
         return False
     return True
+
+
+def _provenance_sources(provenance: Provenance) -> list[str]:
+    return [source.display() for source in provenance.sources]
