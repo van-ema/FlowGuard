@@ -36,8 +36,11 @@ class TransformStep:
 
 @dataclass(frozen=True, slots=True)
 class Provenance:
+    # Security labels carried by this value, for example "Secret".
     labels: frozenset[str] = field(default_factory=frozenset)
+    # Original data sources that introduced the labels.
     sources: tuple[SourceRef, ...] = field(default_factory=tuple)
+    # Safe metadata about operations that preserved this provenance.
     transforms: tuple[TransformStep, ...] = field(default_factory=tuple)
 
     @classmethod
