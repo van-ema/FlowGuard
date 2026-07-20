@@ -34,6 +34,290 @@ Correctness priority:
 - FD table resolution is authoritative.
 - Every violation must include a reconstructable explanation path.
 
+## Current Product Thesis
+
+Do not wait until broad framework integration to go to market. Start market validation now, and launch publicly when the MVP proves one sharp claim:
+
+```text
+Flowguard prevents Python AI agents from leaking sensitive data by tracking provenance of values before network, tool, or subprocess egress.
+```
+
+The market is real but crowded. OWASP has a dedicated Agentic AI Top 10 and solution landscape, and Microsoft Agent Governance Toolkit is already positioning itself as broad runtime governance across frameworks. Flowguard must not compete as generic agent governance.
+
+Flowguard's wedge is narrower:
+
+```text
+provenance-aware DLP for agent runtimes
+```
+
+The core product distinction:
+
+```text
+generic governance:
+  Can this action run?
+
+Flowguard:
+  Did sensitive data flow into the action payload?
+```
+
+## MVP Evidence Path
+
+Production-ready Flowguard needs two layers working together:
+
+```text
+Python dynamic taint runtime = precise dataflow decisions
+Sandbox / syscall enforcement = containment when Python precision is bypassed
+```
+
+Do not rely on Python monkey-patching alone for production. Use it for precision. Use sandboxing and syscall-level enforcement for containment boundaries.
+
+The next end-to-end MVP story:
+
+```text
+OpenAI-style agent/tool
+-> model-generated Python code attempts to read a secret
+-> generated code transforms the secret
+-> generated code tries HTTP exfiltration
+-> Flowguard blocks before network egress
+-> report explains the exact source-to-sink path
+```
+
+This is the product story users and investors can understand.
+
+## Go-To-Market Plan
+
+### 1. Build the Working PoC First
+
+Do not make private outreach a prerequisite at this stage. The first priority is a working artifact that can be evaluated without a meeting.
+
+Actions:
+
+- build a short README section: "Stop AI agents from leaking secrets"
+- ship three reproducible demos: blocked secret exfiltration, allowed safe telemetry, blocked subprocess escape
+- make the PoC runnable by a new user in under 10 minutes
+- produce JSON/JSONL reports that make the value inspectable without a live explanation
+- optionally show the demo to a small number of reachable technical reviewers, but do not block progress on this
+
+Success signal:
+
+- a new user can reproduce the PoC from the README
+- the blocked and allowed cases are obvious from the report
+- external readers ask whether Flowguard supports their framework or deployment shape
+
+### 2. Credible Public MVP
+
+Before public launch, make the MVP reproducible and reviewable.
+
+Required artifacts:
+
+- one-command demo
+- OpenAI Agents SDK example
+- LangGraph or LangChain example
+- JSON and JSONL report with source-to-sink explanation
+- clear threat model and known limitations
+- benchmark page covering secret read plus HTTP send, transformed secret leak, unrelated safe send, subprocess leak, and generated-code leak
+
+Important claim discipline:
+
+- do not claim full sandbox security
+- claim precise tracked-data leak prevention inside the supported Python runtime
+- claim conservative process/syscall fallback outside the precise runtime
+
+### 3. Public Launch Trigger
+
+Launch publicly when a new user can install and reproduce the PoC in under 10 minutes, and when Flowguard blocks a real-looking agent leak before network egress.
+
+Launch channels:
+
+- GitHub
+- Hacker News
+- Reddit
+- X / LinkedIn
+- OWASP GenAI community
+- AI security Discords and Slacks
+- LangChain and OpenAI Agents communities
+- security newsletters
+
+Launch message:
+
+```text
+Show HN: Flowguard - provenance-aware DLP for AI agents
+```
+
+### 4. Convert Attention Into Pilots
+
+Offer:
+
+```text
+Bring your agent. We show whether it leaks secrets.
+```
+
+Target teams with agents that touch:
+
+- customer data
+- source code repositories
+- cloud credentials
+- support tickets
+- financial documents
+- health documents
+- legal documents
+- internal APIs
+
+Commercial beta package:
+
+- runtime SDK
+- policy config
+- report export
+- dashboard or SIEM integration
+- deployment support
+- enterprise policy packs
+- fleet management
+
+Open-source the core runtime enough to build trust. Monetize hosted observability, enterprise policy management, compliance reporting, managed integrations, and support.
+
+## Market Gate
+
+Market validation starts before broad framework and product integration.
+
+The gate is not feature count. The gate is repeated user pull.
+
+Before expanding into a broad product phase, Flowguard needs:
+
+- public PoC that a new user can reproduce in under 10 minutes
+- 5 external users who run or meaningfully review the PoC
+- 2 users who ask whether it can run on their own agent or workflow
+- 1 user who asks for pilot-level support or deeper integration help
+- repeated demand for the same painful use case after public promotion
+
+If those signals are missing, do not keep adding features blindly. Narrow the ICP, improve the demo, and keep learning.
+
+Best initial positioning:
+
+- ICP: AI engineering and security teams deploying internal Python agents with access to secrets, repositories, tickets, or customer data
+- Buyer: security or platform lead worried about agent data leakage and auditability
+- Product: agent DLP runtime with provenance reports
+
+Market references:
+
+- Microsoft Agent Governance Toolkit announcement: https://opensource.microsoft.com/blog/2026/04/02/introducing-the-agent-governance-toolkit-open-source-runtime-security-for-ai-agents/
+- Microsoft Agent Governance Toolkit limitations: https://github.com/microsoft/agent-governance-toolkit/blob/main/docs/LIMITATIONS.md
+- OWASP Agentic AI Top 10 for 2026: https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/
+- OWASP AI Security Solutions Landscape for Agentic AI Q2 2026: https://genai.owasp.org/resource/ai-security-solutions-landscape-for-agentic-ai-q2-2026/
+
+## Production Roadmap
+
+Status key:
+
+- `[DONE]`: implemented and covered by tests or demos in the repo/branch
+- `[WIP]`: partially implemented or currently under active development
+- `[TODO]`: not implemented yet
+
+Current status date: 2026-07-20.
+
+### 1. [WIP] Finish MVP Evidence Path
+
+- `[DONE]` merge the generated-code executor PR. The Python generated-code executor is merged.
+- `[DONE]` add `FlowguardRuntime.report()` and JSON/JSONL export. `flowguard.report.v1` exists, with tests and demo output.
+- `[WIP]` make every block include source, transformations, sink, policy, code hash, and event sequence. Current reports include source, supported tracked transformations, sink, policy, code hash, and event sequence; unsupported transformation paths remain explicit future work.
+- `[DONE]` make the generated-code demo write reviewable JSON/JSONL artifacts under `logs/`.
+
+### 2. [WIP] Harden Python Dynamic Taint
+
+- `[WIP]` expand `TrackedStr` and `TrackedBytes` propagation coverage. Basic string/bytes operations and generated-code f-string support exist.
+- `[DONE]` add transform provenance to `TrackedStr` and `TrackedBytes` so reports show operations such as `str.replace`, `str.lower`, and `str.encode`.
+- `[WIP]` add tests for `json`, `base64`, `urllib`, `requests`, `httpx`, containers, f-strings, slicing, joins, and formatting. Current tests cover f-strings, direct HTTP, `urllib`, fake `requests`, recursive containers, transform paths, and subprocess blocking; `json`, `base64`, `httpx`, and broader container propagation remain incomplete.
+- `[TODO]` add explicit `taint_precision_lost` events when tainted values cross known lossy or unsupported conversion boundaries.
+- `[WIP]` add explicit unsupported-operation semantics: block, warn, or conservative fallback. Unsafe imports and subprocess are blocked; raw sockets/native extensions need clearer coverage.
+- `[TODO]` add wrappers or instrumentation for common provenance-losing library conversions: `json.dumps`, `base64.b64encode`, `urllib.parse.urlencode`, and related pre-egress encoders.
+- `[TODO]` add overhead benchmarks.
+
+### 3. [WIP] Harden Generated-Code Execution
+
+- `[DONE]` treat `run_python(code)` as the only supported generated-code path.
+- `[DONE]` keep AST preflight, restricted imports, code hash, and `runtime.protect()`.
+- `[TODO]` add timeouts, memory limits, output limits, and execution IDs.
+- `[DONE]` store code hash by default and avoid exporting full generated-code bodies.
+
+### 4. [TODO] Add Sandbox Worker Model
+
+- `[TODO]` run each agent or generated-code execution in an isolated worker process or container.
+- `[TODO]` avoid shared global monkey-patching across unrelated tasks.
+- `[TODO]` use read-only filesystem mounts by default.
+- `[TODO]` make secret mounts explicit and labeled.
+- `[TODO]` disable or broker network by default.
+- `[WIP]` block subprocesses unless brokered. Python `protect()` blocks common `subprocess` APIs; worker-level enforcement is not implemented.
+
+### 5. [WIP] Add Egress Broker
+
+- `[WIP]` route HTTP and socket egress through Flowguard. Guarded HTTP and protected `urllib`/loaded `requests`/loaded `httpx` paths exist; raw socket coverage is not complete.
+- `[DONE]` run policy checks before supported HTTP sends.
+- `[TODO]` support destination allowlists.
+- `[DONE]` block `SECRET -> external network` for supported HTTP sinks.
+- `[DONE]` log allowed and blocked supported HTTP egress with provenance through `FlowguardRuntime.report()`.
+
+### 6. [TODO] Fuse Python Runtime With Rust Core
+
+- `[TODO]` feed Python runtime events into the Rust provenance engine.
+- `[TODO]` produce one combined report: object-level taint path plus process/syscall fallback path.
+- `[TODO]` when Python precision is unavailable, let Rust syscall provenance report conservative `secret read -> network` evidence.
+
+### 7. [WIP] Expand Framework Coverage
+
+- `[DONE]` OpenAI Agents SDK first. Adapter skeleton and demo exist.
+- `[TODO]` LangGraph / LangChain second.
+- `[TODO]` MCP gateway and tool-server boundary third.
+- `[DONE]` do not chase every framework until the runtime and report contract is stable.
+
+### 8. [TODO] Add Policy System
+
+Policy files cover:
+
+- `[TODO]` secret sources
+- `[TODO]` allowed endpoints
+- `[TODO]` declassification rules
+- `[TODO]` blocked imports
+- `[TODO]` subprocess broker rules
+
+Policy behavior:
+
+- `[WIP]` default-deny dangerous sinks. Some dangerous paths are blocked in code, but not via policy files.
+- `[WIP]` explicit declassification only. Declassification exists in the Rust-side design; Python value-level policy/config work remains.
+- `[DONE]` never clear taint implicitly.
+
+### 9. [WIP] Add Bypass Testing
+
+Regression cases:
+
+- `[WIP]` `__import__`, `eval`, and `exec`. Generated-code policy rejects direct dunder import; more bypass cases remain.
+- `[WIP]` `ctypes` and native extensions. `ctypes` import is blocked by AST policy; native extension behavior needs explicit tests.
+- `[WIP]` subprocess exfiltration. `protect()` blocks common subprocess APIs; end-to-end exfiltration case needs public PoC coverage.
+- `[TODO]` raw sockets.
+- `[WIP]` encoding and base64 transformation. Encoding paths exist for tracked bytes/strings; base64-specific tests are still missing.
+- `[TODO]` temporary files.
+- `[TODO]` prompt-injected generated code.
+- `[WIP]` framework tool misuse. OpenAI Agents demo exists; broader framework coverage remains.
+
+Known unsupported paths must block, broker, warn, or fall back conservatively. They must not silently allow egress while claiming precise provenance.
+
+### 10. [TODO] Build Operational Product Layer
+
+CLI shape:
+
+```text
+flowguard python run ...
+flowguard agent run ...
+flowguard report ...
+```
+
+Product requirements:
+
+- `[WIP]` stable logs and report schema. `flowguard.report.v1` exists; schema needs review before being treated as stable.
+- `[TODO]` OpenTelemetry or SIEM export later.
+- `[TODO]` clear install path.
+- `[WIP]` examples and README demos. Examples exist; README still needs the new Python report PoC path.
+- `[TODO]` performance budget.
+- `[TODO]` benchmark suite.
+
 ## Related Systems
 
 Use these systems as reference points, not as architecture templates.
@@ -431,6 +715,23 @@ Use a small benign subset to ensure Flowguard does not block normal desktop/agen
 Keep these responsibilities separate. `scenarios` may orchestrate but must not own business logic.
 
 ## Immediate Next Steps
+
+1. `[DONE]` Finish and merge the generated-code executor work.
+2. `[DONE]` Add Python runtime report/export support: `FlowguardRuntime.report()`, JSON, and JSONL.
+3. `[DONE]` Update the generated-code demo so blocked and allowed cases write reviewable artifacts under `logs/`.
+4. `[DONE]` Add transform provenance to reports for supported tracked operations.
+5. `[DONE]` Add recursive payload report tests proving nested tainted values block and export sources/transforms.
+6. `[TODO]` Add `taint_precision_lost` events and define warn-vs-strict behavior.
+7. `[TODO]` Add wrappers or AST instrumentation for common provenance-losing library conversions.
+8. `[TODO]` Create one-command public PoC for transformed secret exfiltration and safe telemetry.
+9. `[WIP]` Add OpenAI Agents SDK and LangGraph/LangChain demo coverage against the same report contract. OpenAI demo exists; LangGraph/LangChain and report-contract demo coverage remain.
+10. `[WIP]` Add unsupported-path tests for subprocess, raw socket, unsafe imports, and native escape attempts. Subprocess and unsafe import coverage exists; raw socket/native escape coverage remains.
+11. `[TODO]` Update `README.md` with the provenance-aware DLP wedge, run commands, known limitations, and launch-ready screenshots/output.
+12. `[TODO]` Promote the PoC once it is reproducible and record feedback in `docs/market-positioning.md`.
+
+## Syscall Engine Backlog
+
+These items remain important for the conservative fallback layer, but they are not the shortest path to a marketable MVP:
 
 1. Add `CONNECT` edge creation and tests.
 2. Add the MVP Flowguard-owned benchmark scenarios as replay YAML files.

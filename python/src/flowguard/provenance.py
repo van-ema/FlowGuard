@@ -21,9 +21,24 @@ class SourceRef:
 
 
 @dataclass(frozen=True, slots=True)
+class TransformStep:
+    operation: str
+    input_type: str
+    output_type: str
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "operation": self.operation,
+            "input_type": self.input_type,
+            "output_type": self.output_type,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class Provenance:
     labels: frozenset[str] = field(default_factory=frozenset)
     sources: tuple[SourceRef, ...] = field(default_factory=tuple)
+    transforms: tuple[TransformStep, ...] = field(default_factory=tuple)
 
     @classmethod
     def empty(cls) -> "Provenance":
@@ -40,6 +55,27 @@ class Provenance:
         return Provenance(
             labels=self.labels | other.labels,
             sources=_dedupe_sources((*self.sources, *other.sources)),
+            transforms=(*self.transforms, *other.transforms),
+        )
+
+    def with_transform(
+        self,
+        *,
+        operation: str,
+        input_type: str,
+        output_type: str,
+    ) -> "Provenance":
+        return Provenance(
+            labels=self.labels,
+            sources=self.sources,
+            transforms=(
+                *self.transforms,
+                TransformStep(
+                    operation=operation,
+                    input_type=input_type,
+                    output_type=output_type,
+                ),
+            ),
         )
 
 
@@ -52,4 +88,3 @@ def merge_provenance(items: Iterable[Provenance]) -> Provenance:
 
 def _dedupe_sources(sources: tuple[SourceRef, ...]) -> tuple[SourceRef, ...]:
     return tuple(dict.fromkeys(sources))
-

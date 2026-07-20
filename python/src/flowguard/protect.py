@@ -155,6 +155,7 @@ class ProtectionContext:
             url=target,
             labels=sorted(provenance.labels),
             sources=[source.display() for source in provenance.sources],
+            transforms=[transform.to_dict() for transform in provenance.transforms],
             api=api,
         )
 
@@ -167,6 +168,7 @@ class ProtectionContext:
                 explanation=decision.explanation,
                 labels=sorted(provenance.labels),
                 sources=[source.display() for source in provenance.sources],
+                transforms=[transform.to_dict() for transform in provenance.transforms],
                 api=api,
             )
             raise FlowguardBlocked(decision)
@@ -176,6 +178,7 @@ class ProtectionContext:
             url=target,
             labels=sorted(provenance.labels),
             sources=[source.display() for source in provenance.sources],
+            transforms=[transform.to_dict() for transform in provenance.transforms],
             api=api,
         )
 

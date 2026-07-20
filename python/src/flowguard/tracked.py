@@ -13,42 +13,61 @@ class TrackedStr(str):
 
     def __add__(self, other: object) -> "TrackedStr":
         value = str.__add__(self, str(other))
-        return TrackedStr(value, provenance_of(self).merge(provenance_of(other)))
+        provenance = provenance_of(self).merge(provenance_of(other))
+        return TrackedStr(
+            value,
+            _with_transform(provenance, "str.concat", "str", "str"),
+        )
 
     def __radd__(self, other: object) -> "TrackedStr":
         value = str.__add__(str(other), self)
-        return TrackedStr(value, provenance_of(other).merge(provenance_of(self)))
+        provenance = provenance_of(other).merge(provenance_of(self))
+        return TrackedStr(
+            value,
+            _with_transform(provenance, "str.concat", "str", "str"),
+        )
 
     def __getitem__(self, key: Any) -> "TrackedStr":
-        return TrackedStr(super().__getitem__(key), provenance_of(self))
+        provenance = _with_transform(provenance_of(self), "str.slice", "str", "str")
+        return TrackedStr(super().__getitem__(key), provenance)
 
     def __format__(self, format_spec: str) -> "TrackedStr":
-        return TrackedStr(super().__format__(format_spec), provenance_of(self))
+        provenance = _with_transform(provenance_of(self), "str.format", "str", "str")
+        return TrackedStr(super().__format__(format_spec), provenance)
 
     def __str__(self) -> "TrackedStr":
         return self
 
     def encode(self, encoding: str = "utf-8", errors: str = "strict") -> "TrackedBytes":
-        return TrackedBytes(super().encode(encoding, errors), provenance_of(self))
+        provenance = _with_transform(provenance_of(self), "str.encode", "str", "bytes")
+        return TrackedBytes(super().encode(encoding, errors), provenance)
 
     def lower(self) -> "TrackedStr":
-        return TrackedStr(super().lower(), provenance_of(self))
+        provenance = _with_transform(provenance_of(self), "str.lower", "str", "str")
+        return TrackedStr(super().lower(), provenance)
 
     def upper(self) -> "TrackedStr":
-        return TrackedStr(super().upper(), provenance_of(self))
+        provenance = _with_transform(provenance_of(self), "str.upper", "str", "str")
+        return TrackedStr(super().upper(), provenance)
 
     def strip(self, chars: str | None = None) -> "TrackedStr":
-        return TrackedStr(super().strip(chars), provenance_of(self))
+        provenance = _with_transform(provenance_of(self), "str.strip", "str", "str")
+        return TrackedStr(super().strip(chars), provenance)
 
     def lstrip(self, chars: str | None = None) -> "TrackedStr":
-        return TrackedStr(super().lstrip(chars), provenance_of(self))
+        provenance = _with_transform(provenance_of(self), "str.lstrip", "str", "str")
+        return TrackedStr(super().lstrip(chars), provenance)
 
     def rstrip(self, chars: str | None = None) -> "TrackedStr":
-        return TrackedStr(super().rstrip(chars), provenance_of(self))
+        provenance = _with_transform(provenance_of(self), "str.rstrip", "str", "str")
+        return TrackedStr(super().rstrip(chars), provenance)
 
     def replace(self, old: str, new: str, count: int = -1) -> "TrackedStr":
         provenance = provenance_of(self).merge(provenance_of(old)).merge(provenance_of(new))
-        return TrackedStr(super().replace(old, new, count), provenance)
+        return TrackedStr(
+            super().replace(old, new, count),
+            _with_transform(provenance, "str.replace", "str", "str"),
+        )
 
 
 class TrackedBytes(bytes):
@@ -59,33 +78,49 @@ class TrackedBytes(bytes):
 
     def __add__(self, other: object) -> "TrackedBytes":
         value = bytes.__add__(self, bytes(other))
-        return TrackedBytes(value, provenance_of(self).merge(provenance_of(other)))
+        provenance = provenance_of(self).merge(provenance_of(other))
+        return TrackedBytes(
+            value,
+            _with_transform(provenance, "bytes.concat", "bytes", "bytes"),
+        )
 
     def __radd__(self, other: object) -> "TrackedBytes":
         value = bytes.__add__(bytes(other), self)
-        return TrackedBytes(value, provenance_of(other).merge(provenance_of(self)))
+        provenance = provenance_of(other).merge(provenance_of(self))
+        return TrackedBytes(
+            value,
+            _with_transform(provenance, "bytes.concat", "bytes", "bytes"),
+        )
 
     def __getitem__(self, key: Any) -> Any:
         value = super().__getitem__(key)
         if isinstance(value, bytes):
-            return TrackedBytes(value, provenance_of(self))
+            provenance = _with_transform(provenance_of(self), "bytes.slice", "bytes", "bytes")
+            return TrackedBytes(value, provenance)
         return value
 
     def decode(self, encoding: str = "utf-8", errors: str = "strict") -> TrackedStr:
-        return TrackedStr(super().decode(encoding, errors), provenance_of(self))
+        provenance = _with_transform(provenance_of(self), "bytes.decode", "bytes", "str")
+        return TrackedStr(super().decode(encoding, errors), provenance)
 
     def lower(self) -> "TrackedBytes":
-        return TrackedBytes(super().lower(), provenance_of(self))
+        provenance = _with_transform(provenance_of(self), "bytes.lower", "bytes", "bytes")
+        return TrackedBytes(super().lower(), provenance)
 
     def upper(self) -> "TrackedBytes":
-        return TrackedBytes(super().upper(), provenance_of(self))
+        provenance = _with_transform(provenance_of(self), "bytes.upper", "bytes", "bytes")
+        return TrackedBytes(super().upper(), provenance)
 
     def strip(self, bytes_: bytes | None = None) -> "TrackedBytes":
-        return TrackedBytes(super().strip(bytes_), provenance_of(self))
+        provenance = _with_transform(provenance_of(self), "bytes.strip", "bytes", "bytes")
+        return TrackedBytes(super().strip(bytes_), provenance)
 
     def replace(self, old: bytes, new: bytes, count: int = -1) -> "TrackedBytes":
         provenance = provenance_of(self).merge(provenance_of(old)).merge(provenance_of(new))
-        return TrackedBytes(super().replace(old, new, count), provenance)
+        return TrackedBytes(
+            super().replace(old, new, count),
+            _with_transform(provenance, "bytes.replace", "bytes", "bytes"),
+        )
 
 
 def track_value(value: Any, provenance: Provenance) -> Any:
@@ -104,3 +139,16 @@ def provenance_of(value: Any) -> Provenance:
     if isinstance(value, (list, tuple, set, frozenset)):
         return merge_provenance(provenance_of(item) for item in value)
     return Provenance.empty()
+
+
+def _with_transform(
+    provenance: Provenance,
+    operation: str,
+    input_type: str,
+    output_type: str,
+) -> Provenance:
+    return provenance.with_transform(
+        operation=operation,
+        input_type=input_type,
+        output_type=output_type,
+    )

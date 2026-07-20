@@ -164,6 +164,7 @@ class GuardedHttpClient:
             url=url,
             labels=sorted(provenance.labels),
             sources=_provenance_sources(provenance),
+            transforms=_provenance_transforms(provenance),
         )
 
         decision = self._runtime.check_network_egress(url, data)
@@ -175,6 +176,7 @@ class GuardedHttpClient:
                 explanation=decision.explanation,
                 labels=sorted(provenance.labels),
                 sources=_provenance_sources(provenance),
+                transforms=_provenance_transforms(provenance),
             )
             raise FlowguardBlocked(decision)
 
@@ -183,6 +185,7 @@ class GuardedHttpClient:
             url=url,
             labels=sorted(provenance.labels),
             sources=_provenance_sources(provenance),
+            transforms=_provenance_transforms(provenance),
         )
         return self._transport.post(url, data=data, **kwargs)
 
@@ -201,3 +204,7 @@ def _is_child_path(candidate: Path, parent: Path) -> bool:
 
 def _provenance_sources(provenance: Provenance) -> list[str]:
     return [source.display() for source in provenance.sources]
+
+
+def _provenance_transforms(provenance: Provenance) -> list[dict[str, str]]:
+    return [transform.to_dict() for transform in provenance.transforms]
