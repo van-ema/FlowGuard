@@ -70,7 +70,7 @@ def run_python(
         compiled = compile(tree, filename=f"<flowguard-generated:{code_hash[:12]}>", mode="exec")
 
         with runtime.protect():
-            namespace = _execution_globals(inputs or {})
+            namespace = _execution_globals(runtime, inputs or {})
             exec(compiled, namespace, namespace)
     except Exception as err:
         runtime.emitter.emit(
@@ -94,7 +94,7 @@ def run_python(
     return GeneratedCodeResult(code_hash=code_hash, globals=public_globals)
 
 
-def _execution_globals(inputs: dict[str, Any]) -> dict[str, Any]:
+def _execution_globals(runtime: Any, inputs: dict[str, Any]) -> dict[str, Any]:
     safe_builtins = {
         name: getattr(builtins, name)
         for name in SAFE_BUILTIN_NAMES
@@ -106,6 +106,8 @@ def _execution_globals(inputs: dict[str, Any]) -> dict[str, Any]:
         "__builtins__": safe_builtins,
         "__flowguard_format_value": _flowguard_format_value,
         "__flowguard_joined_str": _flowguard_joined_str,
+        "__flowguard_precision_call": _flowguard_precision_call,
+        "__flowguard_runtime": runtime,
     }
     namespace.update(inputs)
     return namespace
@@ -119,6 +121,26 @@ def _instrument_generated_code(tree: ast.Module) -> ast.Module:
 
 class _GeneratedCodeInstrumenter(ast.NodeTransformer):
     """Rewrites generated code so tainted values survive string formatting."""
+
+    def visit_Call(self, node: ast.Call) -> ast.AST:
+        node = self.generic_visit(node)
+        operation = _precision_operation_name(node.func)
+        if operation is None:
+            return node
+
+        return ast.copy_location(
+            ast.Call(
+                func=ast.Name(id="__flowguard_precision_call", ctx=ast.Load()),
+                args=[
+                    ast.Name(id="__flowguard_runtime", ctx=ast.Load()),
+                    ast.Constant(value=operation),
+                    node.func,
+                    *node.args,
+                ],
+                keywords=node.keywords,
+            ),
+            node,
+        )
 
     def visit_JoinedStr(self, node: ast.JoinedStr) -> ast.AST:
         parts: list[ast.AST] = []
@@ -154,7 +176,7 @@ def _flowguard_format_value(value: Any) -> Any:
 
     provenance = provenance_of(value)
     text = format(value)
-    if provenance.labels or provenance.sources:
+    if _has_provenance(provenance):
         return track_value(
             text,
             provenance.with_transform(
@@ -171,7 +193,7 @@ def _flowguard_joined_str(parts: list[Any]) -> Any:
 
     text = "".join(str(part) for part in parts)
     provenance = provenance_of(parts)
-    if provenance.labels or provenance.sources:
+    if _has_provenance(provenance):
         return track_value(
             text,
             provenance.with_transform(
@@ -181,6 +203,65 @@ def _flowguard_joined_str(parts: list[Any]) -> Any:
             ),
         )
     return text
+
+
+def _flowguard_precision_call(
+    runtime: Any,
+    operation: str,
+    func: Any,
+    *args: Any,
+    **kwargs: Any,
+) -> Any:
+    input_provenance = provenance_of([args, kwargs])
+    result = func(*args, **kwargs)
+    output_provenance = provenance_of(result)
+
+    if _has_security_provenance(input_provenance) and not _has_provenance(
+        output_provenance
+    ):
+        runtime.record_precision_lost(
+            operation=operation,
+            reason="tainted_input_returned_untracked_value",
+            provenance=input_provenance,
+            input_types=_input_types(args, kwargs),
+            output_type=type(result).__name__,
+        )
+
+    return result
+
+
+def _precision_operation_name(func: ast.AST) -> str | None:
+    if isinstance(func, ast.Name) and func.id in {"str", "bytes"}:
+        return func.id
+    if isinstance(func, ast.Attribute) and func.attr == "dumps":
+        path = _attribute_path(func.value)
+        if path == ("json",):
+            return "json.dumps"
+    return None
+
+
+def _attribute_path(node: ast.AST) -> tuple[str, ...] | None:
+    if isinstance(node, ast.Name):
+        return (node.id,)
+    if isinstance(node, ast.Attribute):
+        parent = _attribute_path(node.value)
+        if parent is not None:
+            return (*parent, node.attr)
+    return None
+
+
+def _input_types(args: tuple[Any, ...], kwargs: dict[str, Any]) -> tuple[str, ...]:
+    positional = [type(arg).__name__ for arg in args]
+    keywords = [f"{key}:{type(value).__name__}" for key, value in sorted(kwargs.items())]
+    return tuple([*positional, *keywords])
+
+
+def _has_provenance(provenance: Any) -> bool:
+    return bool(provenance.labels or provenance.sources or provenance.transforms)
+
+
+def _has_security_provenance(provenance: Any) -> bool:
+    return bool(provenance.labels or provenance.sources)
 
 
 def _guarded_import(

@@ -212,13 +212,14 @@ Status key:
 - `[WIP]`: partially implemented or currently under active development
 - `[TODO]`: not implemented yet
 
-Current status date: 2026-07-20.
+Current status date: 2026-07-21.
 
 ### 1. [WIP] Finish MVP Evidence Path
 
 - `[DONE]` merge the generated-code executor PR. The Python generated-code executor is merged.
 - `[DONE]` add `FlowguardRuntime.report()` and JSON/JSONL export. `flowguard.report.v1` exists, with tests and demo output.
-- `[WIP]` make every block include source, transformations, sink, policy, code hash, and event sequence. Current reports include source, supported tracked transformations, sink, policy, code hash, and event sequence; unsupported transformation paths remain explicit future work.
+- `[DONE]` make supported Python HTTP blocks include source, tracked transformations, sink, policy, code hash, and event sequence in reports.
+- `[DONE]` add first-pass precision-gap reporting for generated-code `json.dumps`, `str`, and `bytes` boundaries.
 - `[DONE]` make the generated-code demo write reviewable JSON/JSONL artifacts under `logs/`.
 
 ### 2. [WIP] Harden Python Dynamic Taint
@@ -226,9 +227,9 @@ Current status date: 2026-07-20.
 - `[WIP]` expand `TrackedStr` and `TrackedBytes` propagation coverage. Basic string/bytes operations and generated-code f-string support exist.
 - `[DONE]` add transform provenance to `TrackedStr` and `TrackedBytes` so reports show operations such as `str.replace`, `str.lower`, and `str.encode`.
 - `[WIP]` add tests for `json`, `base64`, `urllib`, `requests`, `httpx`, containers, f-strings, slicing, joins, and formatting. Current tests cover f-strings, direct HTTP, `urllib`, fake `requests`, recursive containers, transform paths, and subprocess blocking; `json`, `base64`, `httpx`, and broader container propagation remain incomplete.
-- `[TODO]` add explicit `taint_precision_lost` events when tainted values cross known lossy or unsupported conversion boundaries.
-- `[WIP]` add explicit unsupported-operation semantics: block, warn, or conservative fallback. Unsafe imports and subprocess are blocked; raw sockets/native extensions need clearer coverage.
-- `[TODO]` add wrappers or instrumentation for common provenance-losing library conversions: `json.dumps`, `base64.b64encode`, `urllib.parse.urlencode`, and related pre-egress encoders.
+- `[DONE]` add explicit `taint_precision_lost` events for the first known lossy generated-code boundaries.
+- `[WIP]` add explicit unsupported-operation semantics: block, warn, or conservative fallback. `precision_mode="warn" | "strict"` exists for first-pass precision loss; raw sockets/native extensions need clearer coverage.
+- `[WIP]` add wrappers or instrumentation for common provenance-losing library conversions. Generated-code `json.dumps`, `str`, and `bytes` are covered; `base64.b64encode`, `urllib.parse.urlencode`, and related pre-egress encoders remain.
 - `[TODO]` add overhead benchmarks.
 
 ### 3. [WIP] Harden Generated-Code Execution
@@ -721,8 +722,8 @@ Keep these responsibilities separate. `scenarios` may orchestrate but must not o
 3. `[DONE]` Update the generated-code demo so blocked and allowed cases write reviewable artifacts under `logs/`.
 4. `[DONE]` Add transform provenance to reports for supported tracked operations.
 5. `[DONE]` Add recursive payload report tests proving nested tainted values block and export sources/transforms.
-6. `[TODO]` Add `taint_precision_lost` events and define warn-vs-strict behavior.
-7. `[TODO]` Add wrappers or AST instrumentation for common provenance-losing library conversions.
+6. `[DONE]` Add `taint_precision_lost` events and define warn-vs-strict behavior.
+7. `[WIP]` Add wrappers or AST instrumentation for common provenance-losing library conversions. Generated-code `json.dumps`, `str`, and `bytes` are covered; broader encoders remain.
 8. `[TODO]` Create one-command public PoC for transformed secret exfiltration and safe telemetry.
 9. `[WIP]` Add OpenAI Agents SDK and LangGraph/LangChain demo coverage against the same report contract. OpenAI demo exists; LangGraph/LangChain and report-contract demo coverage remain.
 10. `[WIP]` Add unsupported-path tests for subprocess, raw socket, unsafe imports, and native escape attempts. Subprocess and unsafe import coverage exists; raw socket/native escape coverage remains.

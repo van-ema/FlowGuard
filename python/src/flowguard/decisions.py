@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
+from .precision import PrecisionLoss
 from .provenance import Provenance
 
 
@@ -12,6 +14,7 @@ class Decision:
     target: str
     explanation: str
     provenance: Provenance
+    context: dict[str, Any] | None = None
 
     @classmethod
     def block_secret_to_network(cls, target: str, provenance: Provenance) -> "Decision":
@@ -35,4 +38,26 @@ class Decision:
                 "Flowguard protect(); use a brokered subprocess boundary."
             ),
             provenance=Provenance.empty(),
+        )
+
+    @classmethod
+    def block_taint_precision_lost_to_network(
+        cls,
+        target: str,
+        precision_loss: PrecisionLoss,
+    ) -> "Decision":
+        sources = ", ".join(
+            source.display() for source in precision_loss.provenance.sources
+        )
+        return cls(
+            kind="Block",
+            policy="TaintPrecisionLostToNetwork",
+            target=target,
+            explanation=(
+                f"Secret-derived data from {sources} crossed unsupported "
+                f"transformation {precision_loss.operation}; strict mode blocked "
+                f"network sink {target}"
+            ),
+            provenance=precision_loss.provenance,
+            context={"precision_loss": precision_loss.to_event_details()},
         )

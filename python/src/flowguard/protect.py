@@ -24,9 +24,11 @@ class ProtectionContext:
     def __init__(self, runtime: Any) -> None:
         self._runtime = runtime
         self._patches: list[_Patch] = []
+        self._scope_id: str | None = None
 
     def __enter__(self) -> "ProtectionContext":
-        self._runtime.emitter.emit("protect_start")
+        self._scope_id = self._runtime.begin_protection_scope()
+        self._runtime.emitter.emit("protect_start", scope_id=self._scope_id)
         self._patch(builtins, "open", self._guarded_open(builtins.open))
         self._patch_http_clients()
         self._patch_subprocess()
@@ -36,7 +38,10 @@ class ProtectionContext:
         for patch in reversed(self._patches):
             setattr(patch.target, patch.name, patch.original)
         self._patches.clear()
-        self._runtime.emitter.emit("protect_end")
+        self._runtime.emitter.emit("protect_end", scope_id=self._scope_id)
+        if self._scope_id is not None:
+            self._runtime.end_protection_scope(self._scope_id)
+            self._scope_id = None
         return False
 
     def _patch(self, target: Any, name: str, replacement: Any) -> None:
@@ -157,19 +162,28 @@ class ProtectionContext:
             sources=[source.display() for source in provenance.sources],
             transforms=[transform.to_dict() for transform in provenance.transforms],
             api=api,
+            scope_id=self._runtime.current_scope_id(),
         )
 
         decision = self._runtime.check_network_egress(target, payload)
         if decision is not None:
+            decision_provenance = decision.provenance
             self._runtime.emitter.emit(
                 "http_send_blocked",
                 url=target,
                 policy=decision.policy,
                 explanation=decision.explanation,
-                labels=sorted(provenance.labels),
-                sources=[source.display() for source in provenance.sources],
-                transforms=[transform.to_dict() for transform in provenance.transforms],
+                labels=sorted(decision_provenance.labels),
+                sources=[
+                    source.display() for source in decision_provenance.sources
+                ],
+                transforms=[
+                    transform.to_dict()
+                    for transform in decision_provenance.transforms
+                ],
+                precision_loss=_decision_precision_loss(decision),
                 api=api,
+                scope_id=self._runtime.current_scope_id(),
             )
             raise FlowguardBlocked(decision)
 
@@ -180,6 +194,7 @@ class ProtectionContext:
             sources=[source.display() for source in provenance.sources],
             transforms=[transform.to_dict() for transform in provenance.transforms],
             api=api,
+            scope_id=self._runtime.current_scope_id(),
         )
 
     def _patch_subprocess(self) -> None:
@@ -198,3 +213,10 @@ class ProtectionContext:
             raise FlowguardBlocked(decision)
 
         return wrapper
+
+
+def _decision_precision_loss(decision: Any) -> object | None:
+    context = getattr(decision, "context", None)
+    if context is None:
+        return None
+    return context.get("precision_loss")

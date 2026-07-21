@@ -15,6 +15,7 @@ class ReportSummary:
     violation_count: int
     blocked_count: int
     allowed_send_count: int
+    precision_loss_count: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,6 +29,7 @@ class ReportViolation:
     labels: list[str]
     sources: list[str]
     transforms: list[dict[str, str]]
+    precision_loss: dict[str, Any] | None = None
     api: str | None = None
 
 
@@ -43,6 +45,20 @@ class ReportNetworkSend:
 
 
 @dataclass(frozen=True, slots=True)
+class ReportPrecisionLoss:
+    sequence: int
+    timestamp: str | None
+    operation: str
+    reason: str
+    labels: list[str]
+    sources: list[str]
+    transforms: list[dict[str, str]]
+    input_types: list[str]
+    output_type: str
+    scope_id: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class FlowguardReport:
     """Structured view over runtime events for audit and demos."""
 
@@ -50,6 +66,7 @@ class FlowguardReport:
     summary: ReportSummary
     violations: list[ReportViolation]
     allowed_sends: list[ReportNetworkSend]
+    precision_losses: list[ReportPrecisionLoss]
     events: list[dict[str, Any]]
 
     @classmethod
@@ -65,17 +82,24 @@ class FlowguardReport:
             for event in copied_events
             if event.get("type") == "http_send_allowed"
         ]
+        precision_losses = [
+            _precision_loss_from_event(event)
+            for event in copied_events
+            if event.get("type") == "taint_precision_lost"
+        ]
         summary = ReportSummary(
             event_count=len(copied_events),
             violation_count=len(violations),
             blocked_count=len(violations),
             allowed_send_count=len(allowed_sends),
+            precision_loss_count=len(precision_losses),
         )
         return cls(
             schema_version=REPORT_SCHEMA_VERSION,
             summary=summary,
             violations=violations,
             allowed_sends=allowed_sends,
+            precision_losses=precision_losses,
             events=copied_events,
         )
 
@@ -85,6 +109,7 @@ class FlowguardReport:
             "summary": asdict(self.summary),
             "violations": [asdict(violation) for violation in self.violations],
             "allowed_sends": [asdict(send) for send in self.allowed_sends],
+            "precision_losses": [asdict(loss) for loss in self.precision_losses],
             "events": self.events,
         }
 
@@ -125,6 +150,7 @@ def _violation_from_event(event: dict[str, Any]) -> ReportViolation:
         labels=_string_list(details.get("labels")),
         sources=_string_list(details.get("sources")),
         transforms=_transform_list(details.get("transforms")),
+        precision_loss=_optional_dict(details.get("precision_loss")),
         api=_optional_string(details.get("api")),
     )
 
@@ -139,6 +165,22 @@ def _allowed_send_from_event(event: dict[str, Any]) -> ReportNetworkSend:
         labels=_string_list(details.get("labels")),
         sources=_string_list(details.get("sources")),
         transforms=_transform_list(details.get("transforms")),
+    )
+
+
+def _precision_loss_from_event(event: dict[str, Any]) -> ReportPrecisionLoss:
+    details = _details(event)
+    return ReportPrecisionLoss(
+        sequence=_sequence(event),
+        timestamp=_timestamp(event),
+        operation=str(details.get("operation", "")),
+        reason=str(details.get("reason", "")),
+        labels=_string_list(details.get("labels")),
+        sources=_string_list(details.get("sources")),
+        transforms=_transform_list(details.get("transforms")),
+        input_types=_string_list(details.get("input_types")),
+        output_type=str(details.get("output_type", "")),
+        scope_id=_optional_string(details.get("scope_id")),
     )
 
 
@@ -201,3 +243,9 @@ def _transform_list(value: Any) -> list[dict[str, str]]:
                 }
             )
     return transforms
+
+
+def _optional_dict(value: Any) -> dict[str, Any] | None:
+    if isinstance(value, dict):
+        return dict(value)
+    return None
