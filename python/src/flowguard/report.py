@@ -27,6 +27,7 @@ class ReportViolation:
     explanation: str
     labels: list[str]
     sources: list[str]
+    transforms: list[dict[str, str]]
     api: str | None = None
 
 
@@ -38,6 +39,7 @@ class ReportNetworkSend:
     api: str | None
     labels: list[str]
     sources: list[str]
+    transforms: list[dict[str, str]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,6 +124,7 @@ def _violation_from_event(event: dict[str, Any]) -> ReportViolation:
         explanation=str(details.get("explanation", "")),
         labels=_string_list(details.get("labels")),
         sources=_string_list(details.get("sources")),
+        transforms=_transform_list(details.get("transforms")),
         api=_optional_string(details.get("api")),
     )
 
@@ -135,6 +138,7 @@ def _allowed_send_from_event(event: dict[str, Any]) -> ReportNetworkSend:
         api=_optional_string(details.get("api")),
         labels=_string_list(details.get("labels")),
         sources=_string_list(details.get("sources")),
+        transforms=_transform_list(details.get("transforms")),
     )
 
 
@@ -181,3 +185,19 @@ def _string_list(value: Any) -> list[str]:
     if isinstance(value, (list, tuple, set, frozenset)):
         return [str(item) for item in value]
     return [str(value)]
+
+
+def _transform_list(value: Any) -> list[dict[str, str]]:
+    if not isinstance(value, (list, tuple)):
+        return []
+    transforms: list[dict[str, str]] = []
+    for item in value:
+        if isinstance(item, dict):
+            transforms.append(
+                {
+                    "operation": str(item.get("operation", "")),
+                    "input_type": str(item.get("input_type", "")),
+                    "output_type": str(item.get("output_type", "")),
+                }
+            )
+    return transforms

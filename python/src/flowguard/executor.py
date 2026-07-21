@@ -155,7 +155,14 @@ def _flowguard_format_value(value: Any) -> Any:
     provenance = provenance_of(value)
     text = format(value)
     if provenance.labels or provenance.sources:
-        return track_value(text, provenance)
+        return track_value(
+            text,
+            provenance.with_transform(
+                operation="str.format_value",
+                input_type=type(value).__name__,
+                output_type="str",
+            ),
+        )
     return text
 
 
@@ -165,7 +172,14 @@ def _flowguard_joined_str(parts: list[Any]) -> Any:
     text = "".join(str(part) for part in parts)
     provenance = provenance_of(parts)
     if provenance.labels or provenance.sources:
-        return track_value(text, provenance)
+        return track_value(
+            text,
+            provenance.with_transform(
+                operation="str.joined",
+                input_type="list",
+                output_type="str",
+            ),
+        )
     return text
 
 
