@@ -62,6 +62,53 @@ Violation:
 
 SECRET → NETWORK
 
+## Reproduce The Python MVP PoC
+
+This is the fastest public demo of the Python dynamic taint runtime:
+
+```sh
+bash scripts/run_python_mvp_poc.sh
+```
+
+The script runs three generated-code cases:
+
+- transformed secret exfiltration: blocked as `SecretToNetwork`
+- safe telemetry after reading a secret: allowed
+- `json.dumps` precision loss in strict mode: blocked as `TaintPrecisionLostToNetwork`
+
+Expected terminal summary:
+
+```text
+Flowguard Python MVP PoC
+
+[1/3] transformed secret exfiltration
+result: BLOCKED SecretToNetwork
+
+[2/3] safe telemetry
+result: ALLOWED
+
+[3/3] precision-loss strict mode
+result: BLOCKED TaintPrecisionLostToNetwork
+```
+
+Generated artifacts:
+
+- `logs/python-mvp-poc.report.json`
+- `logs/python-mvp-poc.events.jsonl`
+
+Current limitations:
+
+- the PoC covers generated Python code executed through `FlowguardRuntime.run_python`
+- strict precision-loss blocking currently covers selected lossy conversions such as `json.dumps`, `str`, and `bytes`
+- raw sockets, native extensions, and broader library encoders remain hardening work
+
+Useful overrides:
+
+```sh
+FLOWGUARD_POC_OUT_DIR=/tmp/flowguard bash scripts/run_python_mvp_poc.sh
+FLOWGUARD_POC_NAME=my-review bash scripts/run_python_mvp_poc.sh
+```
+
 ## Reproduce The Docker Observe POC
 
 This POC runs a real shell pipeline inside Docker:
