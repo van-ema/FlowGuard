@@ -96,6 +96,41 @@ Generated artifacts:
 - `logs/python-mvp-poc.report.json`
 - `logs/python-mvp-poc.events.jsonl`
 
+### What This Proves
+
+The PoC demonstrates Flowguard's current Python runtime claim:
+
+- secret-derived tracked values are blocked before supported HTTP egress
+- safe constant telemetry is allowed even after the process reads a secret
+- lossy generated-code conversions are reported as precision gaps instead of silently treated as safe
+- strict precision mode blocks later supported egress after unresolved secret precision loss
+
+### Inspect The Report
+
+Pretty-print the report:
+
+```sh
+python3 -m json.tool logs/python-mvp-poc.report.json | less
+```
+
+Useful fields to inspect:
+
+- `summary.violation_count`: expected `2`
+- `summary.allowed_send_count`: expected `1`
+- `summary.precision_loss_count`: expected `1`
+- `violations[].policy`: contains `SecretToNetwork` and `TaintPrecisionLostToNetwork`
+- `violations[].sources`: contains the generated demo secret file source
+- `violations[].transforms`: shows tracked operations such as `str.replace`, `str.lower`, and `str.encode`
+- `precision_losses[].operation`: contains `json.dumps`
+
+Raw event stream:
+
+```sh
+head -n 20 logs/python-mvp-poc.events.jsonl
+```
+
+The JSONL file is useful for replay, future Rust-core ingestion, and SIEM-style export.
+
 Current limitations:
 
 - the PoC covers generated Python code executed through `FlowguardRuntime.run_python`
