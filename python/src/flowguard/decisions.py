@@ -9,6 +9,8 @@ from .provenance import Provenance
 
 @dataclass(frozen=True, slots=True)
 class Decision:
+    """Policy outcome returned before a guarded action is allowed to continue."""
+
     kind: str
     policy: str
     target: str
@@ -18,6 +20,8 @@ class Decision:
 
     @classmethod
     def block_secret_to_network(cls, target: str, provenance: Provenance) -> "Decision":
+        """Blocks a network sink whose payload still carries secret provenance."""
+
         sources = ", ".join(source.display() for source in provenance.sources)
         return cls(
             kind="Block",
@@ -29,6 +33,8 @@ class Decision:
 
     @classmethod
     def block_unbrokered_subprocess(cls, api: str) -> "Decision":
+        """Blocks subprocess APIs that run inside protect() without a broker."""
+
         return cls(
             kind="Block",
             policy="UnbrokeredSubprocess",
@@ -46,6 +52,12 @@ class Decision:
         target: str,
         precision_loss: PrecisionLoss,
     ) -> "Decision":
+        """Blocks target after secret provenance was lost before network egress.
+
+        target is the sink identifier Flowguard is about to allow, normally a URL
+        or endpoint string from the guarded HTTP call.
+        """
+
         sources = ", ".join(
             source.display() for source in precision_loss.provenance.sources
         )
