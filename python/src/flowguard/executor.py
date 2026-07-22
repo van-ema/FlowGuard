@@ -104,6 +104,7 @@ def _execution_globals(runtime: Any, inputs: dict[str, Any]) -> dict[str, Any]:
 
     namespace: dict[str, Any] = {
         "__builtins__": safe_builtins,
+        "__name__": "__main__",
         "__flowguard_format_value": _flowguard_format_value,
         "__flowguard_joined_str": _flowguard_joined_str,
         "__flowguard_precision_call": _flowguard_precision_call,
@@ -216,6 +217,16 @@ def _flowguard_precision_call(
     result = func(*args, **kwargs)
     output_provenance = provenance_of(result)
 
+    if _has_security_provenance(input_provenance) and operation in _TRACKED_TRANSFORMS:
+        return track_value(
+            result,
+            input_provenance.with_transform(
+                operation=operation,
+                input_type=", ".join(_input_types(args, kwargs)),
+                output_type=type(result).__name__,
+            ),
+        )
+
     if _has_security_provenance(input_provenance) and not _has_provenance(
         output_provenance
     ):
@@ -237,6 +248,10 @@ def _precision_operation_name(func: ast.AST) -> str | None:
         path = _attribute_path(func.value)
         if path == ("json",):
             return "json.dumps"
+    if isinstance(func, ast.Attribute) and func.attr in _BASE64_TRANSFORM_NAMES:
+        path = _attribute_path(func.value)
+        if path == ("base64",):
+            return f"base64.{func.attr}"
     return None
 
 
@@ -262,6 +277,22 @@ def _has_provenance(provenance: Any) -> bool:
 
 def _has_security_provenance(provenance: Any) -> bool:
     return bool(provenance.labels or provenance.sources)
+
+
+_BASE64_TRANSFORM_NAMES = frozenset(
+    {
+        "b64encode",
+        "b64decode",
+        "standard_b64encode",
+        "standard_b64decode",
+        "urlsafe_b64encode",
+        "urlsafe_b64decode",
+    }
+)
+
+_TRACKED_TRANSFORMS = frozenset(
+    f"base64.{name}" for name in _BASE64_TRANSFORM_NAMES
+)
 
 
 def _guarded_import(

@@ -25,19 +25,27 @@ class ProtectionContext:
         self._runtime = runtime
         self._patches: list[_Patch] = []
         self._scope_id: str | None = None
+        self._owns_patches = False
 
     def __enter__(self) -> "ProtectionContext":
+        already_protected = self._runtime.current_scope_id() is not None
         self._scope_id = self._runtime.begin_protection_scope()
         self._runtime.emitter.emit("protect_start", scope_id=self._scope_id)
+        if already_protected:
+            return self
+
+        self._owns_patches = True
         self._patch(builtins, "open", self._guarded_open(builtins.open))
         self._patch_http_clients()
         self._patch_subprocess()
         return self
 
     def __exit__(self, exc_type: object, exc: object, tb: object) -> bool:
-        for patch in reversed(self._patches):
-            setattr(patch.target, patch.name, patch.original)
-        self._patches.clear()
+        if self._owns_patches:
+            for patch in reversed(self._patches):
+                setattr(patch.target, patch.name, patch.original)
+            self._patches.clear()
+            self._owns_patches = False
         self._runtime.emitter.emit("protect_end", scope_id=self._scope_id)
         if self._scope_id is not None:
             self._runtime.end_protection_scope(self._scope_id)

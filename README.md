@@ -144,6 +144,53 @@ FLOWGUARD_POC_OUT_DIR=/tmp/flowguard bash scripts/run_python_mvp_poc.sh
 FLOWGUARD_POC_NAME=my-review bash scripts/run_python_mvp_poc.sh
 ```
 
+## Reproduce The Live OpenAI Agent Demo
+
+This demo uses the OpenAI Agents SDK to run a real LLM-backed tool-calling agent.
+The model is asked to generate Python code that reads a fake local secret and
+tries to send it over HTTP. Flowguard executes that generated code through the
+protected Python runtime and blocks before the HTTP transport is reached.
+
+Install the optional SDK and run the demo:
+
+```sh
+python3 -m pip install openai-agents
+OPENAI_API_KEY=... bash scripts/run_openai_live_agent_leak_demo.sh
+```
+
+Expected terminal summary:
+
+```text
+Flowguard OpenAI Live Agent Demo
+model: gpt-5-nano
+
+result: BLOCKED SecretToNetwork
+network_calls=0
+```
+
+Generated artifacts:
+
+- `logs/openai-live-agent-demo.report.json`
+- `logs/openai-live-agent-demo.events.jsonl`
+
+Useful fields to inspect:
+
+- `summary.violation_count`: expected `1`
+- `violations[].policy`: expected `SecretToNetwork`
+- `violations[].transforms`: shows the generated-code transformation path
+- `events[]`: includes the OpenAI tool call, generated-code execution, file read, and blocked HTTP send
+
+Useful overrides:
+
+```sh
+FLOWGUARD_AGENT_MODEL=gpt-5-nano bash scripts/run_openai_live_agent_leak_demo.sh
+FLOWGUARD_AGENT_OUT_DIR=/tmp/flowguard bash scripts/run_openai_live_agent_leak_demo.sh
+FLOWGUARD_AGENT_NAME=my-live-review bash scripts/run_openai_live_agent_leak_demo.sh
+```
+
+The OpenAI SDK is intentionally optional. The core Flowguard Python runtime does
+not depend on OpenAI or LangChain packages.
+
 ## Reproduce The Docker Observe POC
 
 This POC runs a real shell pipeline inside Docker:

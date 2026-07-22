@@ -156,6 +156,24 @@ urllib.request.urlopen(req)
         self.assertIn("code_hash", start_event["details"])
         self.assertNotIn("code", start_event["details"])
 
+    def test_generated_code_runs_main_name_guard(self) -> None:
+        runtime = FlowguardRuntime()
+
+        result = runtime.run_python(
+            """
+ran = False
+
+def main():
+    global ran
+    ran = True
+
+if __name__ == "__main__":
+    main()
+"""
+        )
+
+        self.assertTrue(result.globals["ran"])
+
 
 def _has_event(runtime: FlowguardRuntime, event_type: str) -> bool:
     return any(event["type"] == event_type for event in runtime.emitter.events)

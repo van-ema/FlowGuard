@@ -222,15 +222,16 @@ Current status date: 2026-07-21.
 - `[DONE]` add first-pass precision-gap reporting for generated-code `json.dumps`, `str`, and `bytes` boundaries.
 - `[DONE]` make the generated-code demo write reviewable JSON/JSONL artifacts under `logs/`.
 - `[DONE]` package the generated-code leak, safe telemetry, and precision-loss cases as one-command public PoC output.
+- `[DONE]` add optional live OpenAI Agents SDK demo where an LLM-backed agent calls a Flowguard generated-code tool and `SecretToNetwork` blocks before HTTP transport.
 
 ### 2. [WIP] Harden Python Dynamic Taint
 
 - `[WIP]` expand `TrackedStr` and `TrackedBytes` propagation coverage. Basic string/bytes operations and generated-code f-string support exist.
 - `[DONE]` add transform provenance to `TrackedStr` and `TrackedBytes` so reports show operations such as `str.replace`, `str.lower`, and `str.encode`.
-- `[WIP]` add tests for `json`, `base64`, `urllib`, `requests`, `httpx`, containers, f-strings, slicing, joins, and formatting. Current tests cover f-strings, direct HTTP, `urllib`, fake `requests`, recursive containers, transform paths, and subprocess blocking; `json`, `base64`, `httpx`, and broader container propagation remain incomplete.
+- `[WIP]` add tests for `json`, `base64`, `urllib`, `requests`, `httpx`, containers, f-strings, slicing, joins, and formatting. Current tests cover f-strings, direct HTTP, `urllib`, fake `requests`, recursive containers, transform paths, base64 encoding, and subprocess blocking; `httpx` and broader container propagation remain incomplete.
 - `[DONE]` add explicit `taint_precision_lost` events for the first known lossy generated-code boundaries.
 - `[WIP]` add explicit unsupported-operation semantics: block, warn, or conservative fallback. `precision_mode="warn" | "strict"` exists for first-pass precision loss; raw sockets/native extensions need clearer coverage.
-- `[WIP]` add wrappers or instrumentation for common provenance-losing library conversions. Generated-code `json.dumps`, `str`, and `bytes` are covered; `base64.b64encode`, `urllib.parse.urlencode`, and related pre-egress encoders remain.
+- `[WIP]` add wrappers or instrumentation for common provenance-losing library conversions. Generated-code `json.dumps`, `str`, `bytes`, and common `base64` encoders are covered; `urllib.parse.urlencode` and related pre-egress encoders remain.
 - `[TODO]` add overhead benchmarks.
 
 ### 3. [WIP] Harden Generated-Code Execution
@@ -265,7 +266,7 @@ Current status date: 2026-07-21.
 
 ### 7. [WIP] Expand Framework Coverage
 
-- `[DONE]` OpenAI Agents SDK first. Adapter skeleton and demo exist.
+- `[DONE]` OpenAI Agents SDK first. Adapter skeleton, protected-tool demo, and optional live LLM-backed generated-code demo exist.
 - `[TODO]` LangGraph / LangChain second.
 - `[TODO]` MCP gateway and tool-server boundary third.
 - `[DONE]` do not chase every framework until the runtime and report contract is stable.
@@ -294,10 +295,10 @@ Regression cases:
 - `[WIP]` `ctypes` and native extensions. `ctypes` import is blocked by AST policy; native extension behavior needs explicit tests.
 - `[WIP]` subprocess exfiltration. `protect()` blocks common subprocess APIs; end-to-end exfiltration case needs public PoC coverage.
 - `[TODO]` raw sockets.
-- `[WIP]` encoding and base64 transformation. Encoding paths exist for tracked bytes/strings; base64-specific tests are still missing.
+- `[WIP]` encoding and base64 transformation. Encoding paths and base64 propagation tests exist; broader encoder coverage remains.
 - `[TODO]` temporary files.
 - `[TODO]` prompt-injected generated code.
-- `[WIP]` framework tool misuse. OpenAI Agents demo exists; broader framework coverage remains.
+- `[WIP]` framework tool misuse. OpenAI protected-tool and live generated-code demos exist; broader framework coverage remains.
 
 Known unsupported paths must block, broker, warn, or fall back conservatively. They must not silently allow egress while claiming precise provenance.
 
@@ -727,7 +728,7 @@ Keep these responsibilities separate. `scenarios` may orchestrate but must not o
 7. `[DONE]` Create one-command public PoC for transformed secret exfiltration, safe telemetry, and strict precision-loss blocking.
 8. `[DONE]` Update `README.md` with the PoC command, expected terminal output, report paths, and known limitations.
 9. `[WIP]` Add wrappers or AST instrumentation for common provenance-losing library conversions. Generated-code `json.dumps`, `str`, and `bytes` are covered; broader encoders remain.
-10. `[WIP]` Add OpenAI Agents SDK and LangGraph/LangChain demo coverage against the same report contract. OpenAI demo exists; LangGraph/LangChain and report-contract demo coverage remain.
+10. `[WIP]` Add OpenAI Agents SDK and LangGraph/LangChain demo coverage against the same report contract. OpenAI protected-tool and live generated-code demos exist; LangGraph/LangChain coverage remains.
 11. `[WIP]` Add unsupported-path tests for subprocess, raw socket, unsafe imports, and native escape attempts. Subprocess and unsafe import coverage exists; raw socket/native escape coverage remains.
 12. `[TODO]` Promote the PoC once it is reproducible and record feedback in `docs/market-positioning.md`.
 

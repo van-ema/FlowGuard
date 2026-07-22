@@ -49,6 +49,37 @@ class TransparentProtectionTests(unittest.TestCase):
 
             self.assertEqual(blocked.exception.policy, "SecretToNetwork")
 
+    def test_nested_protect_does_not_double_patch_urlopen(self) -> None:
+        calls: list[dict[str, Any]] = []
+        original_urlopen = request.urlopen
+
+        def fake_urlopen(req: Any, data: Any = None, *args: Any, **kwargs: Any) -> bytes:
+            calls.append({"req": req, "data": data, "args": args, "kwargs": kwargs})
+            return b"ok"
+
+        request.urlopen = fake_urlopen
+        try:
+            runtime = FlowguardRuntime()
+            with runtime.protect():
+                with runtime.protect():
+                    req = request.Request(
+                        "https://telemetry.example/event",
+                        data=b"ok",
+                        method="POST",
+                    )
+                    request.urlopen(req)
+
+            allowed_events = [
+                event
+                for event in runtime.emitter.events
+                if event["type"] == "http_send_allowed"
+            ]
+
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(len(allowed_events), 1)
+        finally:
+            request.urlopen = original_urlopen
+
     def test_protect_blocks_loaded_requests_module_before_post(self) -> None:
         calls: list[dict[str, Any]] = []
         fake_requests = types.ModuleType("requests")
