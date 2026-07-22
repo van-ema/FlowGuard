@@ -62,6 +62,88 @@ Violation:
 
 SECRET → NETWORK
 
+## Reproduce The Python MVP PoC
+
+This is the fastest public demo of the Python dynamic taint runtime:
+
+```sh
+bash scripts/run_python_mvp_poc.sh
+```
+
+The script runs three generated-code cases:
+
+- transformed secret exfiltration: blocked as `SecretToNetwork`
+- safe telemetry after reading a secret: allowed
+- `json.dumps` precision loss in strict mode: blocked as `TaintPrecisionLostToNetwork`
+
+Expected terminal summary:
+
+```text
+Flowguard Python MVP PoC
+
+[1/3] transformed secret exfiltration
+result: BLOCKED SecretToNetwork
+
+[2/3] safe telemetry
+result: ALLOWED
+
+[3/3] precision-loss strict mode
+result: BLOCKED TaintPrecisionLostToNetwork
+```
+
+Generated artifacts:
+
+- `logs/python-mvp-poc.report.json`
+- `logs/python-mvp-poc.events.jsonl`
+
+### What This Proves
+
+The PoC demonstrates Flowguard's current Python runtime claim:
+
+- secret-derived tracked values are blocked before supported HTTP egress
+- safe constant telemetry is allowed even after the process reads a secret
+- lossy generated-code conversions are reported as precision gaps instead of silently treated as safe
+- strict precision mode blocks later supported egress after unresolved secret precision loss
+
+### Inspect The Report
+
+Pretty-print the report:
+
+```sh
+python3 -m json.tool logs/python-mvp-poc.report.json | less
+```
+
+Useful fields to inspect:
+
+- `summary.violation_count`: expected `2`
+- `summary.allowed_send_count`: expected `1`
+- `summary.precision_loss_count`: expected `1`
+- `violations[].policy`: contains `SecretToNetwork` and `TaintPrecisionLostToNetwork`
+- `violations[].sources`: contains the generated demo secret file source
+- `violations[].transforms`: shows tracked operations such as `str.replace`, `str.lower`, and `str.encode`
+- `precision_losses[].operation`: contains `json.dumps`
+
+Raw event stream:
+
+```sh
+head -n 20 logs/python-mvp-poc.events.jsonl
+```
+
+The JSONL file is useful for replay, future Rust-core ingestion, and SIEM-style export.
+
+Current limitations:
+
+- the PoC covers generated Python code executed through `FlowguardRuntime.run_python`
+- strict precision-loss blocking currently covers selected lossy conversions such as `json.dumps`, `str`, and `bytes`
+- raw sockets, native extensions, and broader library encoders remain hardening work
+
+Useful overrides:
+
+```sh
+FLOWGUARD_POC_OUT_DIR=/tmp/flowguard bash scripts/run_python_mvp_poc.sh
+FLOWGUARD_POC_NAME=my-review bash scripts/run_python_mvp_poc.sh
+```
+
 ## Reproduce The Docker Observe POC
 
 This POC runs a real shell pipeline inside Docker:

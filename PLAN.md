@@ -221,6 +221,7 @@ Current status date: 2026-07-21.
 - `[DONE]` make supported Python HTTP blocks include source, tracked transformations, sink, policy, code hash, and event sequence in reports.
 - `[DONE]` add first-pass precision-gap reporting for generated-code `json.dumps`, `str`, and `bytes` boundaries.
 - `[DONE]` make the generated-code demo write reviewable JSON/JSONL artifacts under `logs/`.
+- `[DONE]` package the generated-code leak, safe telemetry, and precision-loss cases as one-command public PoC output.
 
 ### 2. [WIP] Harden Python Dynamic Taint
 
@@ -723,11 +724,11 @@ Keep these responsibilities separate. `scenarios` may orchestrate but must not o
 4. `[DONE]` Add transform provenance to reports for supported tracked operations.
 5. `[DONE]` Add recursive payload report tests proving nested tainted values block and export sources/transforms.
 6. `[DONE]` Add `taint_precision_lost` events and define warn-vs-strict behavior.
-7. `[WIP]` Add wrappers or AST instrumentation for common provenance-losing library conversions. Generated-code `json.dumps`, `str`, and `bytes` are covered; broader encoders remain.
-8. `[TODO]` Create one-command public PoC for transformed secret exfiltration and safe telemetry.
-9. `[WIP]` Add OpenAI Agents SDK and LangGraph/LangChain demo coverage against the same report contract. OpenAI demo exists; LangGraph/LangChain and report-contract demo coverage remain.
-10. `[WIP]` Add unsupported-path tests for subprocess, raw socket, unsafe imports, and native escape attempts. Subprocess and unsafe import coverage exists; raw socket/native escape coverage remains.
-11. `[TODO]` Update `README.md` with the provenance-aware DLP wedge, run commands, known limitations, and launch-ready screenshots/output.
+7. `[DONE]` Create one-command public PoC for transformed secret exfiltration, safe telemetry, and strict precision-loss blocking.
+8. `[DONE]` Update `README.md` with the PoC command, expected terminal output, report paths, and known limitations.
+9. `[WIP]` Add wrappers or AST instrumentation for common provenance-losing library conversions. Generated-code `json.dumps`, `str`, and `bytes` are covered; broader encoders remain.
+10. `[WIP]` Add OpenAI Agents SDK and LangGraph/LangChain demo coverage against the same report contract. OpenAI demo exists; LangGraph/LangChain and report-contract demo coverage remain.
+11. `[WIP]` Add unsupported-path tests for subprocess, raw socket, unsafe imports, and native escape attempts. Subprocess and unsafe import coverage exists; raw socket/native escape coverage remains.
 12. `[TODO]` Promote the PoC once it is reproducible and record feedback in `docs/market-positioning.md`.
 
 ## Syscall Engine Backlog

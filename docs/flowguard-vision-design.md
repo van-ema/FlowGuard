@@ -356,6 +356,7 @@ The executor:
 - blocks `ctypes`, arbitrary native extensions, and raw syscalls initially
 - restricts imports to an allowlist
 - emits provenance events for reads, transformations, and egress attempts
+- emits precision-loss events when known conversions drop tracked provenance
 
 Unsupported code paths are not silently allowed.
 
@@ -428,6 +429,32 @@ Initial propagation coverage includes:
 - selected list, tuple, and dictionary containers
 - tool return values
 - HTTP request bodies
+
+### Precision-Loss Reporting
+
+Some Python operations convert tracked values into plain runtime values.
+
+Flowguard treats this as a precision gap, not proof of safety.
+
+For generated Python code, the trusted executor wraps selected lossy boundaries such as:
+
+- `json.dumps`
+- `str`
+- `bytes`
+
+If tainted input enters one of these boundaries and the result no longer carries provenance, Flowguard emits `taint_precision_lost`.
+
+In warning mode, the report shows the precision gap.
+
+In strict mode, later supported network egress in the same protected scope is blocked as `TaintPrecisionLostToNetwork`.
+
+This preserves the core correctness contract:
+
+```text
+unsupported or lossy provenance path
+  -> explicit warning or block
+  -> never silent allow while claiming precision
+```
 
 ### Boundary Taint Sources and Sinks
 
