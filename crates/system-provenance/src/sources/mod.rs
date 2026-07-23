@@ -117,14 +117,20 @@ impl EventSource for DemoSecretExfilSource {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use crate::policy::{DecisionKind, PolicyId};
     use crate::scenarios::ScenarioRunner;
 
     use super::{DemoSecretExfilSource, EventSource, YamlScenarioSource};
 
+    fn scenario_path(path: &str) -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(path)
+    }
+
     #[test]
     fn yaml_source_loads_replayable_scenario() {
-        let source = YamlScenarioSource::new("scenarios/secret_exfil.yaml");
+        let source = YamlScenarioSource::new(scenario_path("scenarios/secret_exfil.yaml"));
 
         let scenario = source.load_scenario().unwrap();
         let outcome = ScenarioRunner::new().run(&scenario);

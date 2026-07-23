@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::process::{Command, Output};
 
 fn flowguard_replay_args(args: &[&str]) -> Output {
@@ -8,7 +9,12 @@ fn flowguard_replay_args(args: &[&str]) -> Output {
 }
 
 fn flowguard_replay(path: &str) -> Output {
-    flowguard_replay_args(&["replay", path])
+    let scenario_path = scenario_path(path);
+    flowguard_replay_args(&["replay", scenario_path.to_str().unwrap()])
+}
+
+fn scenario_path(path: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(path)
 }
 
 fn stdout(output: &Output) -> String {
@@ -35,7 +41,8 @@ fn replay_secret_exfil_blocks_with_explanation() {
 
 #[test]
 fn replay_secret_exfil_json_includes_observability_report() {
-    let output = flowguard_replay_args(&["replay", "scenarios/secret_exfil.yaml", "--json"]);
+    let scenario_path = scenario_path("scenarios/secret_exfil.yaml");
+    let output = flowguard_replay_args(&["replay", scenario_path.to_str().unwrap(), "--json"]);
     let stdout = stdout(&output);
     let report: serde_json::Value = serde_json::from_str(&stdout).expect("invalid json report");
 

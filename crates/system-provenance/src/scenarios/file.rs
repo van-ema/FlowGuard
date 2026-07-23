@@ -502,6 +502,8 @@ impl From<ScenarioSocketOption> for SocketOption {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use crate::events::{AddressFamily, Event, SocketLevel};
     use crate::policy::{DecisionKind, PolicyId};
     use crate::scenarios::ReplayWarningKind;
@@ -509,9 +511,13 @@ mod tests {
 
     use super::{load_yaml_file, load_yaml_str};
 
+    fn scenario_path(path: &str) -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(path)
+    }
+
     #[test]
     fn loads_secret_exfil_yaml_and_replays_it() {
-        let scenario = load_yaml_file("scenarios/secret_exfil.yaml").unwrap();
+        let scenario = load_yaml_file(scenario_path("scenarios/secret_exfil.yaml")).unwrap();
 
         let outcome = ScenarioRunner::new().run(&scenario);
 
@@ -609,7 +615,7 @@ events:
 
     #[test]
     fn copy_fail_yaml_blocks_af_alg_socket_create() {
-        let scenario = load_yaml_file("scenarios/copy_fail.yaml").unwrap();
+        let scenario = load_yaml_file(scenario_path("scenarios/copy_fail.yaml")).unwrap();
 
         let outcome = ScenarioRunner::new().run(&scenario);
 
@@ -630,7 +636,7 @@ events:
 
     #[test]
     fn prompt_shell_yaml_blocks_without_approval() {
-        let scenario = load_yaml_file("scenarios/prompt_shell_block.yaml").unwrap();
+        let scenario = load_yaml_file(scenario_path("scenarios/prompt_shell_block.yaml")).unwrap();
 
         let outcome = ScenarioRunner::new().run(&scenario);
 
@@ -649,7 +655,8 @@ events:
 
     #[test]
     fn prompt_shell_yaml_allows_scoped_approval() {
-        let scenario = load_yaml_file("scenarios/prompt_shell_approved.yaml").unwrap();
+        let scenario =
+            load_yaml_file(scenario_path("scenarios/prompt_shell_approved.yaml")).unwrap();
 
         let outcome = ScenarioRunner::new().run(&scenario);
 
@@ -660,7 +667,8 @@ events:
 
     #[test]
     fn external_executable_write_yaml_blocks() {
-        let scenario = load_yaml_file("scenarios/external_executable_write.yaml").unwrap();
+        let scenario =
+            load_yaml_file(scenario_path("scenarios/external_executable_write.yaml")).unwrap();
 
         let outcome = ScenarioRunner::new().run(&scenario);
 
@@ -679,7 +687,8 @@ events:
 
     #[test]
     fn benign_external_download_yaml_is_allowed() {
-        let scenario = load_yaml_file("scenarios/benign_external_download.yaml").unwrap();
+        let scenario =
+            load_yaml_file(scenario_path("scenarios/benign_external_download.yaml")).unwrap();
 
         let outcome = ScenarioRunner::new().run(&scenario);
 
@@ -690,7 +699,8 @@ events:
 
     #[test]
     fn sandbox_escape_docker_socket_yaml_blocks() {
-        let scenario = load_yaml_file("scenarios/sandbox_escape_docker_socket.yaml").unwrap();
+        let scenario =
+            load_yaml_file(scenario_path("scenarios/sandbox_escape_docker_socket.yaml")).unwrap();
 
         let outcome = ScenarioRunner::new().run(&scenario);
 
@@ -709,7 +719,8 @@ events:
 
     #[test]
     fn benign_tmp_socket_file_yaml_is_allowed() {
-        let scenario = load_yaml_file("scenarios/benign_tmp_socket_file.yaml").unwrap();
+        let scenario =
+            load_yaml_file(scenario_path("scenarios/benign_tmp_socket_file.yaml")).unwrap();
 
         let outcome = ScenarioRunner::new().run(&scenario);
 
@@ -720,7 +731,8 @@ events:
 
     #[test]
     fn malformed_missing_fd_yaml_warns_and_continues() {
-        let scenario = load_yaml_file("scenarios/malformed_missing_fd.yaml").unwrap();
+        let scenario =
+            load_yaml_file(scenario_path("scenarios/malformed_missing_fd.yaml")).unwrap();
 
         let outcome = ScenarioRunner::new().run(&scenario);
 
@@ -740,7 +752,7 @@ events:
 
     #[test]
     fn benign_send_yaml_is_allowed() {
-        let scenario = load_yaml_file("scenarios/benign_send.yaml").unwrap();
+        let scenario = load_yaml_file(scenario_path("scenarios/benign_send.yaml")).unwrap();
 
         let outcome = ScenarioRunner::new().run(&scenario);
 
@@ -751,7 +763,7 @@ events:
 
     #[test]
     fn benign_socket_yaml_is_allowed() {
-        let scenario = load_yaml_file("scenarios/benign_socket.yaml").unwrap();
+        let scenario = load_yaml_file(scenario_path("scenarios/benign_socket.yaml")).unwrap();
 
         let outcome = ScenarioRunner::new().run(&scenario);
 

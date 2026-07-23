@@ -9,7 +9,10 @@ import unittest
 from pathlib import Path
 from typing import Any
 
-from examples.openai_live_agent_leak_demo import run_demo
+RUNTIME_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(RUNTIME_ROOT))
+
+from demos.openai_live_agent_leak_demo import run_demo
 
 
 LEAK_CODE = """

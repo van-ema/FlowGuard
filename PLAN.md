@@ -212,7 +212,7 @@ Status key:
 - `[WIP]`: partially implemented or currently under active development
 - `[TODO]`: not implemented yet
 
-Current status date: 2026-07-21.
+Current status date: 2026-07-23.
 
 ### 1. [WIP] Finish MVP Evidence Path
 
@@ -317,9 +317,17 @@ Product requirements:
 - `[WIP]` stable logs and report schema. `flowguard.report.v1` exists; schema needs review before being treated as stable.
 - `[TODO]` OpenTelemetry or SIEM export later.
 - `[TODO]` clear install path.
-- `[WIP]` examples and README demos. Examples exist; README still needs the new Python report PoC path.
+- `[WIP]` demos and README commands. Python taint demos live under `runtimes/python-taint/demos`; system provenance POCs live under `crates/system-provenance/scripts`.
 - `[TODO]` performance budget.
 - `[TODO]` benchmark suite.
+
+### 11. [DONE] Repository Layout
+
+- `[DONE]` move the precise Python dynamic taint runtime to `runtimes/python-taint/`.
+- `[DONE]` move Python demos and scripts under `runtimes/python-taint/demos/` and `runtimes/python-taint/scripts/`.
+- `[DONE]` move Rust syscall/process provenance code to `crates/system-provenance/`.
+- `[DONE]` move system provenance scenarios, fixtures, Docker observer assets, and scripts under `crates/system-provenance/`.
+- `[DONE]` keep a root Cargo workspace so `cargo test` remains valid from the repository root.
 
 ## Related Systems
 
@@ -542,7 +550,7 @@ Build a minimal DynamoRIO client that tracks secret-derived bytes from file read
 Initial target:
 
 ```text
-drrun -c flowguard_dbi_client.so -- python3 fixtures/agents/python_secret_post.py
+drrun -c flowguard_dbi_client.so -- python3 crates/system-provenance/fixtures/agents/python_secret_post.py
 ```
 
 The client should:
@@ -605,7 +613,7 @@ Do not let the DBI client mutate the provenance graph directly. Every graph edge
 
 The POC is useful only if it proves all of these:
 
-- A Python script that reads `fixtures/home/.ssh/id_rsa` and sends the same bytes is reported as `DefiniteSecretToNetwork`.
+- A Python script that reads `crates/system-provenance/fixtures/home/.ssh/id_rsa` and sends the same bytes is reported as `DefiniteSecretToNetwork`.
 - A Python script that reads the same secret but sends unrelated constant text does not produce the high-confidence DBI violation.
 - The normal syscall provenance layer still reports the conservative `PossibleSecretToNetwork` case.
 - The report includes secret source path, sink fd/endpoint when available, tainted byte count, process identity, and event timestamp.
@@ -656,7 +664,7 @@ Metrics:
 
 BadComputerUse is useful for comparing against AgentSentinel, but it should be sampled rather than fully integrated for MVP.
 
-Convert 5-10 representative cases into `scenarios/*.yaml`:
+Convert 5-10 representative cases into `crates/system-provenance/scenarios/*.yaml`:
 
 - malicious tool result causes `curl | bash`
 - agent reads `.ssh/id_rsa` and exfiltrates it
@@ -730,7 +738,8 @@ Keep these responsibilities separate. `scenarios` may orchestrate but must not o
 9. `[WIP]` Add wrappers or AST instrumentation for common provenance-losing library conversions. Generated-code `json.dumps`, `str`, and `bytes` are covered; broader encoders remain.
 10. `[WIP]` Add OpenAI Agents SDK and LangGraph/LangChain demo coverage against the same report contract. OpenAI protected-tool and live generated-code demos exist; LangGraph/LangChain coverage remains.
 11. `[WIP]` Add unsupported-path tests for subprocess, raw socket, unsafe imports, and native escape attempts. Subprocess and unsafe import coverage exists; raw socket/native escape coverage remains.
-12. `[TODO]` Promote the PoC once it is reproducible and record feedback in `docs/market-positioning.md`.
+12. `[DONE]` Restructure repository ownership around `runtimes/python-taint` and `crates/system-provenance`.
+13. `[TODO]` Promote the PoC once it is reproducible and record feedback in `docs/market-positioning.md`.
 
 ## Syscall Engine Backlog
 
@@ -761,7 +770,7 @@ Use a controlled malicious-agent fixture.
 
 Behavior:
 
-- read fake secret file: `fixtures/home/.ssh/id_rsa`
+- read fake secret file: `crates/system-provenance/fixtures/home/.ssh/id_rsa`
 - pass contents through a pipe or subprocess boundary
 - send data to `evil.example:443`
 
@@ -782,12 +791,12 @@ proc:curl --SEND--> endpoint:evil.example:443
 
 ### Replayable Scenario Files
 
-Add scenario files under `scenarios/`.
+Add scenario files under `crates/system-provenance/scenarios/`.
 
 First scenario:
 
 ```text
-scenarios/secret_exfil.yaml
+crates/system-provenance/scenarios/secret_exfil.yaml
 ```
 
 It should encode ordered observed events:
@@ -810,7 +819,7 @@ Reason: scenario files make demos easier to inspect, modify, and explain than ha
 Add a CLI binary:
 
 ```text
-cargo run -- replay scenarios/secret_exfil.yaml
+cargo run --manifest-path crates/system-provenance/Cargo.toml -- replay crates/system-provenance/scenarios/secret_exfil.yaml
 ```
 
 Minimum output:
@@ -842,8 +851,8 @@ CLI requirements:
 Add two demo modes:
 
 ```text
-cargo run -- replay scenarios/secret_exfil.yaml --mode observe
-cargo run -- replay scenarios/secret_exfil.yaml --mode enforce
+cargo run --manifest-path crates/system-provenance/Cargo.toml -- replay crates/system-provenance/scenarios/secret_exfil.yaml --mode observe
+cargo run --manifest-path crates/system-provenance/Cargo.toml -- replay crates/system-provenance/scenarios/secret_exfil.yaml --mode enforce
 ```
 
 Expected behavior:
@@ -858,7 +867,7 @@ This demonstrates the difference between passive detection and prevention.
 After replay CLI works, add a small controlled wrapper:
 
 ```text
-cargo run -- demo secret-exfil
+cargo run --manifest-path crates/system-provenance/Cargo.toml -- demo secret-exfil
 ```
 
 The wrapper can launch a demo process or simulate wrapper-emitted events. It does not need eBPF yet.
@@ -872,7 +881,7 @@ Purpose:
 ### MVP Acceptance Criteria
 
 - `cargo test` passes
-- `cargo run -- replay scenarios/secret_exfil.yaml` prints a block
+- `cargo run --manifest-path crates/system-provenance/Cargo.toml -- replay crates/system-provenance/scenarios/secret_exfil.yaml` prints a block
 - output includes policy name, sink event, and full source-to-sink path
 - a benign scenario that sends non-secret data is allowed
 - demo can be explained in under one minute

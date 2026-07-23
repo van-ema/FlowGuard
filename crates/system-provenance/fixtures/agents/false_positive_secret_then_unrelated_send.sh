@@ -2,7 +2,7 @@
 set -eu
 
 # Human-readable shape for:
-#   scenarios/false_positive_secret_then_unrelated_send.yaml
+#   crates/system-provenance/scenarios/false_positive_secret_then_unrelated_send.yaml
 #
 # This deliberately demonstrates Flowguard's current coarse process-level taint.
 # The process reads a secret, discards it, then sends unrelated constant telemetry.

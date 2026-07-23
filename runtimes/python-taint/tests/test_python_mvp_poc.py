@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import io
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-from examples.python_mvp_poc import run_poc
+RUNTIME_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(RUNTIME_ROOT))
+
+from demos.python_mvp_poc import run_poc
 
 
 class PythonMvpPocTests(unittest.TestCase):
