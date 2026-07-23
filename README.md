@@ -156,12 +156,16 @@ The model is asked to generate Python code that reads a fake local secret and
 tries to send it over HTTP. Flowguard executes that generated code through the
 protected Python runtime and blocks before the HTTP transport is reached.
 
-Install the optional SDK and run the demo:
+Run the demo:
 
 ```sh
-python3 -m pip install openai-agents
 OPENAI_API_KEY=... bash runtimes/python-taint/scripts/run_openai_live_agent_leak_demo.sh
 ```
+
+The script builds or reuses a Docker image named `flowguard-python-taint-demo`
+and runs the live agent inside a restricted container. The container has outbound
+network access for the OpenAI API, but the fake exfiltration endpoint should not
+be reached because Flowguard blocks before HTTP transport.
 
 Expected terminal summary:
 
@@ -191,6 +195,14 @@ Useful overrides:
 FLOWGUARD_AGENT_MODEL=gpt-5-nano bash runtimes/python-taint/scripts/run_openai_live_agent_leak_demo.sh
 FLOWGUARD_AGENT_OUT_DIR=/tmp/flowguard bash runtimes/python-taint/scripts/run_openai_live_agent_leak_demo.sh
 FLOWGUARD_AGENT_NAME=my-live-review bash runtimes/python-taint/scripts/run_openai_live_agent_leak_demo.sh
+FLOWGUARD_AGENT_SKIP_DOCKER_BUILD=1 bash runtimes/python-taint/scripts/run_openai_live_agent_leak_demo.sh
+```
+
+For local development without Docker, install the optional SDK and opt out:
+
+```sh
+python3 -m pip install openai-agents
+OPENAI_API_KEY=... FLOWGUARD_AGENT_LOCAL=1 bash runtimes/python-taint/scripts/run_openai_live_agent_leak_demo.sh
 ```
 
 The OpenAI SDK is intentionally optional. The core Flowguard Python runtime does

@@ -222,7 +222,7 @@ Current status date: 2026-07-23.
 - `[DONE]` add first-pass precision-gap reporting for generated-code `json.dumps`, `str`, and `bytes` boundaries.
 - `[DONE]` make the generated-code demo write reviewable JSON/JSONL artifacts under `logs/`.
 - `[DONE]` package the generated-code leak, safe telemetry, and precision-loss cases as one-command public PoC output.
-- `[DONE]` add optional live OpenAI Agents SDK demo where an LLM-backed agent calls a Flowguard generated-code tool and `SecretToNetwork` blocks before HTTP transport.
+- `[DONE]` add optional live OpenAI Agents SDK demo where an LLM-backed agent calls a Flowguard generated-code tool and `SecretToNetwork` blocks before HTTP transport. The public runner uses Docker by default.
 
 ### 2. [WIP] Harden Python Dynamic Taint
 
