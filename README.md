@@ -208,6 +208,50 @@ OPENAI_API_KEY=... FLOWGUARD_AGENT_LOCAL=1 bash runtimes/python-taint/scripts/ru
 The OpenAI SDK is intentionally optional. The core Flowguard Python runtime does
 not depend on OpenAI or LangChain packages.
 
+## Reproduce The Python Taint Eval
+
+This offline eval suite checks the Python runtime's security behavior across
+supported leak, safe-send, precision-loss, and unsupported-path cases:
+
+```sh
+bash runtimes/python-taint/scripts/run_python_taint_eval.sh
+```
+
+Expected terminal summary:
+
+```text
+Flowguard Python Taint Eval
+cases=8
+PASS direct_secret_to_http: blocked policy=SecretToNetwork
+PASS transformed_secret_to_http: blocked policy=SecretToNetwork
+PASS base64_secret_to_http: blocked policy=SecretToNetwork
+PASS safe_telemetry_after_secret_read: allowed policy=-
+PASS json_precision_loss_strict: blocked policy=TaintPrecisionLostToNetwork
+PASS json_precision_loss_warn: allowed policy=-
+PASS subprocess_escape_attempt: preflight_blocked policy=AstPolicyViolation
+PASS raw_socket_attempt: preflight_blocked policy=AstPolicyViolation
+```
+
+Generated artifacts:
+
+- `logs/python-taint-eval.report.json`
+- `logs/python-taint-eval.events.jsonl`
+- `logs/python-taint-eval.summary.md`
+
+Useful commands:
+
+```sh
+bash runtimes/python-taint/scripts/run_python_taint_eval.sh --list
+bash runtimes/python-taint/scripts/run_python_taint_eval.sh --case json_precision_loss_warn
+FLOWGUARD_EVAL_OUT_DIR=/tmp/flowguard bash runtimes/python-taint/scripts/run_python_taint_eval.sh
+FLOWGUARD_EVAL_NAME=my-eval bash runtimes/python-taint/scripts/run_python_taint_eval.sh
+```
+
+This is a correctness benchmark, not an overhead benchmark. It demonstrates
+where Flowguard blocks definite tracked leaks, where it allows safe constant
+telemetry, where warn mode reports precision loss without blocking, and where
+unsupported generated-code paths are rejected before execution.
+
 ## Reproduce The Docker Observe POC
 
 This POC runs a real shell pipeline inside Docker:
