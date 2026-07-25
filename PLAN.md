@@ -223,12 +223,13 @@ Current status date: 2026-07-23.
 - `[DONE]` make the generated-code demo write reviewable JSON/JSONL artifacts under `logs/`.
 - `[DONE]` package the generated-code leak, safe telemetry, and precision-loss cases as one-command public PoC output.
 - `[DONE]` add optional live OpenAI Agents SDK demo where an LLM-backed agent calls a Flowguard generated-code tool and `SecretToNetwork` blocks before HTTP transport. The public runner uses Docker by default.
+- `[DONE]` add offline Python taint evals covering direct, transformed, and base64 secret leaks; safe telemetry; strict and warn precision-loss behavior; subprocess preflight blocks; and raw socket preflight blocks.
 
 ### 2. [WIP] Harden Python Dynamic Taint
 
 - `[WIP]` expand `TrackedStr` and `TrackedBytes` propagation coverage. Basic string/bytes operations and generated-code f-string support exist.
 - `[DONE]` add transform provenance to `TrackedStr` and `TrackedBytes` so reports show operations such as `str.replace`, `str.lower`, and `str.encode`.
-- `[WIP]` add tests for `json`, `base64`, `urllib`, `requests`, `httpx`, containers, f-strings, slicing, joins, and formatting. Current tests cover f-strings, direct HTTP, `urllib`, fake `requests`, recursive containers, transform paths, base64 encoding, and subprocess blocking; `httpx` and broader container propagation remain incomplete.
+- `[WIP]` add tests for `json`, `base64`, `urllib`, `requests`, `httpx`, containers, f-strings, slicing, joins, and formatting. Current tests and evals cover f-strings, direct HTTP, `urllib`, fake `requests`, recursive containers, transform paths, base64 encoding, warn/strict precision loss, subprocess preflight blocking, and raw socket preflight blocking; `httpx` and broader container propagation remain incomplete.
 - `[DONE]` add explicit `taint_precision_lost` events for the first known lossy generated-code boundaries.
 - `[WIP]` add explicit unsupported-operation semantics: block, warn, or conservative fallback. `precision_mode="warn" | "strict"` exists for first-pass precision loss; raw sockets/native extensions need clearer coverage.
 - `[WIP]` add wrappers or instrumentation for common provenance-losing library conversions. Generated-code `json.dumps`, `str`, `bytes`, and common `base64` encoders are covered; `urllib.parse.urlencode` and related pre-egress encoders remain.
@@ -319,7 +320,7 @@ Product requirements:
 - `[TODO]` clear install path.
 - `[WIP]` demos and README commands. Python taint demos live under `runtimes/python-taint/demos`; system provenance POCs live under `crates/system-provenance/scripts`.
 - `[TODO]` performance budget.
-- `[TODO]` benchmark suite.
+- `[WIP]` benchmark suite. Offline Python taint correctness evals exist; overhead benchmarks remain TODO.
 
 ### 11. [DONE] Repository Layout
 
