@@ -11,21 +11,6 @@ Flowguard has two implementation layers:
 
 The goal is to detect, block, and explain unsafe data movement in AI agents and automated systems.
 
-## Landing Page Draft
-
-A static project landing page lives in `website/`.
-
-Open it locally:
-
-```sh
-open website/index.html
-```
-
-The page is designed for market-validation feedback and explains Flowguard as
-provenance-aware data leak prevention for AI agents.
-
----
-
 ## Motivation
 
 Modern AI agents can:
