@@ -206,6 +206,51 @@ OPENAI_API_KEY=... FLOWGUARD_AGENT_LOCAL=1 bash runtimes/python-taint/scripts/ru
 The OpenAI SDK is intentionally optional. The core Flowguard Python runtime does
 not depend on OpenAI or LangChain packages.
 
+## Reproduce The LangChain/LangGraph Demo
+
+This offline demo adapts Flowguard tools to LangChain's `StructuredTool`
+interface, which is also accepted by LangGraph tool nodes. It reads a fake
+secret, transforms it, and invokes a protected network tool. Flowguard blocks
+the send before the fake transport is reached:
+
+```sh
+bash runtimes/python-taint/scripts/run_langchain_leak_demo.sh
+```
+
+Expected terminal summary:
+
+```text
+adapter: LangChain/LangGraph tools registered
+# or: adapter: skipped (...) when langchain-core is not installed
+Flowguard LangChain/LangGraph Demo
+result: BLOCKED SecretToNetwork
+network_calls=0
+```
+
+`langchain-core` is optional. When it is installed, the demo invokes converted
+tools through `.invoke(...)`, matching LangChain and LangGraph tool execution.
+Without it, the same deterministic scenario runs directly through
+`FlowguardTool` and reports that adapter registration was skipped.
+
+To exercise the adapter locally:
+
+```sh
+python3 -m pip install langchain-core
+bash runtimes/python-taint/scripts/run_langchain_leak_demo.sh
+```
+
+Generated artifacts:
+
+- `logs/langchain-secret-leak.report.json`
+- `logs/langchain-secret-leak.events.jsonl`
+
+Useful overrides:
+
+```sh
+FLOWGUARD_LANGCHAIN_OUT_DIR=/tmp/flowguard bash runtimes/python-taint/scripts/run_langchain_leak_demo.sh
+FLOWGUARD_LANGCHAIN_NAME=my-review bash runtimes/python-taint/scripts/run_langchain_leak_demo.sh
+```
+
 ## Reproduce The Python Taint Eval
 
 This offline eval suite checks the Python runtime's security behavior across

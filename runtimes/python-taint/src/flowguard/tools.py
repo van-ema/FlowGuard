@@ -62,3 +62,10 @@ class FlowguardTool:
         from .adapters.openai_agents import as_openai_tool
 
         return as_openai_tool(self)
+
+    def as_langchain_tool(self) -> Any:
+        """Return a LangChain tool that keeps Flowguard protection active."""
+
+        from .adapters.langchain import as_langchain_tool
+
+        return as_langchain_tool(self)
