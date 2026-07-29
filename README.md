@@ -11,6 +11,14 @@ Flowguard has two implementation layers:
 
 The goal is to detect, block, and explain unsafe data movement in AI agents and automated systems.
 
+## Landing Page
+
+The public AgentLineage landing page is maintained separately in
+`/Users/emanuelevannacci/github/agentlineage-site` so website deployment access
+does not need access to this repository.
+
+---
+
 ## Motivation
 
 Modern AI agents can:
