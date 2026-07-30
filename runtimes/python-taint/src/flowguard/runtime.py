@@ -9,8 +9,15 @@ from urllib import request
 from .decisions import Decision
 from .emitter import EventEmitter
 from .exceptions import FlowguardBlocked
+from .model import (
+    ModelDestination,
+    ModelEgressAction,
+    ModelEgressPolicy,
+    ModelPolicyResult,
+)
 from .precision import PrecisionLoss, PrecisionMode, normalize_precision_mode
 from .provenance import SECRET_LABEL, Provenance, SourceRef
+from .provenance_context import ProvenanceContext
 from .tracked import provenance_of, track_value
 from .tools import FlowguardTool
 
@@ -27,11 +34,14 @@ class FlowguardRuntime:
         event_log: str | Path | None = None,
         http_transport: HttpTransport | None = None,
         precision_mode: str = "warn",
+        model_policy: ModelEgressPolicy | None = None,
     ) -> None:
         self.secret_paths = tuple(_normalize_path(path) for path in secret_paths)
         self.emitter = EventEmitter(event_log)
         self.http = GuardedHttpClient(self, http_transport)
         self.precision_mode: PrecisionMode = normalize_precision_mode(precision_mode)
+        self.model_policy = model_policy or ModelEgressPolicy()
+        self.provenance_context = ProvenanceContext()
         self._scope_counter = 0
         self._scope_stack: list[str] = []
         self._precision_losses_by_scope: dict[str | None, list[PrecisionLoss]] = {}
@@ -89,6 +99,96 @@ class FlowguardRuntime:
             return Decision.block_taint_precision_lost_to_network(target, precision_loss)
         return None
 
+    def check_model_egress(
+        self,
+        destination: ModelDestination,
+        provenance: Provenance,
+        *,
+        unknown_context_ids: tuple[str, ...] = (),
+        transport: str = "model",
+    ) -> ModelPolicyResult:
+        """Enforce policy before a model adapter opens its provider transport."""
+
+        event_details = {
+            "target": destination.target,
+            "provider": destination.provider,
+            "model": destination.model,
+            "trust_zone": destination.trust_zone,
+            "transport": transport,
+            "labels": sorted(provenance.labels),
+            "sources": _provenance_sources(provenance),
+            "transforms": _provenance_transforms(provenance),
+            "unknown_context_ids": list(unknown_context_ids),
+            "scope_id": self.current_scope_id(),
+        }
+        self.emitter.emit("model_request_attempt", **event_details)
+
+        if unknown_context_ids and self.precision_mode == "strict":
+            decision = Decision.block_untracked_model_context(
+                destination.target,
+                unknown_context_ids,
+            )
+            self._emit_model_request_blocked(decision, event_details)
+            raise FlowguardBlocked(decision)
+
+        result = self.model_policy.evaluate(destination, provenance)
+        if result.action is ModelEgressAction.BLOCK:
+            decision = Decision.block_sensitive_to_model(
+                destination.target,
+                provenance,
+                policy=result.policy,
+            )
+            self._emit_model_request_blocked(decision, event_details)
+            raise FlowguardBlocked(decision)
+
+        self.emitter.emit(
+            "model_request_allowed",
+            **event_details,
+            policy=result.policy,
+            action=result.action.value,
+        )
+        return result
+
+    def guard_openai_model(
+        self,
+        model: Any,
+        *,
+        provider: str,
+        model_name: str,
+        trust_zone: str = "external",
+    ) -> Any:
+        """Wrap an OpenAI Agents SDK model without importing the SDK core-side."""
+
+        from .adapters.openai_model import FlowguardOpenAIModel
+
+        return FlowguardOpenAIModel(
+            self,
+            model,
+            ModelDestination(
+                provider=provider,
+                model=model_name,
+                trust_zone=trust_zone,
+            ),
+        )
+
+    def openai_model_provider(
+        self,
+        provider: Any,
+        *,
+        provider_name: str = "openai",
+        trust_zone: str = "external",
+    ) -> Any:
+        """Wrap OpenAI model-name lookup with model-egress enforcement."""
+
+        from .adapters.openai_model import FlowguardOpenAIModelProvider
+
+        return FlowguardOpenAIModelProvider(
+            self,
+            provider,
+            provider_name=provider_name,
+            trust_zone=trust_zone,
+        )
+
     def block_unbrokered_subprocess(self, api: str) -> Decision:
         return Decision.block_unbrokered_subprocess(api)
 
@@ -144,6 +244,19 @@ class FlowguardRuntime:
         from .report import FlowguardReport
 
         return FlowguardReport.from_events(self.emitter.events)
+
+    def _emit_model_request_blocked(
+        self,
+        decision: Decision,
+        event_details: dict[str, Any],
+    ) -> None:
+        self.emitter.emit(
+            "model_request_blocked",
+            **event_details,
+            policy=decision.policy,
+            action=ModelEgressAction.BLOCK.value,
+            explanation=decision.explanation,
+        )
 
 
 class GuardedFile:
