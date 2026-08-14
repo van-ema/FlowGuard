@@ -32,6 +32,48 @@ class Decision:
         )
 
     @classmethod
+    def block_sensitive_to_model(
+        cls,
+        target: str,
+        provenance: Provenance,
+        *,
+        policy: str,
+    ) -> "Decision":
+        """Blocks labeled data before it enters an unapproved model."""
+
+        sources = ", ".join(source.display() for source in provenance.sources)
+        return cls(
+            kind="Block",
+            policy=policy,
+            target=target,
+            explanation=(
+                f"Sensitive data from {sources or 'tracked input'} would enter "
+                f"model destination {target}"
+            ),
+            provenance=provenance,
+        )
+
+    @classmethod
+    def block_untracked_model_context(
+        cls,
+        target: str,
+        context_ids: tuple[str, ...],
+    ) -> "Decision":
+        """Blocks server-managed model state that has no sidecar provenance."""
+
+        return cls(
+            kind="Block",
+            policy="UntrackedModelContext",
+            target=target,
+            explanation=(
+                f"Model destination {target} references untracked context "
+                f"{', '.join(context_ids)}"
+            ),
+            provenance=Provenance.empty(),
+            context={"unknown_context_ids": list(context_ids)},
+        )
+
+    @classmethod
     def block_unbrokered_subprocess(cls, api: str) -> "Decision":
         """Blocks subprocess APIs that run inside protect() without a broker."""
 

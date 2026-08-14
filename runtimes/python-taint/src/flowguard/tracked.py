@@ -131,6 +131,53 @@ def track_value(value: Any, provenance: Provenance) -> Any:
     return value
 
 
+def track_with_provenance(value: Any, provenance: Provenance) -> Any:
+    """Apply provenance recursively after a framework serialization boundary."""
+
+    merged = provenance_of(value).merge(provenance)
+    if isinstance(value, str):
+        return TrackedStr(value, merged)
+    if isinstance(value, bytes):
+        return TrackedBytes(value, merged)
+    if isinstance(value, dict):
+        return {
+            key: track_with_provenance(item, provenance)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [track_with_provenance(item, provenance) for item in value]
+    if isinstance(value, tuple):
+        return tuple(track_with_provenance(item, provenance) for item in value)
+    if isinstance(value, set):
+        return {track_with_provenance(item, provenance) for item in value}
+    if isinstance(value, frozenset):
+        return frozenset(track_with_provenance(item, provenance) for item in value)
+    return value
+
+
+def untrack_value(value: Any) -> Any:
+    """Return transport-safe base values after provenance is stored sidecar."""
+
+    if isinstance(value, TrackedStr):
+        return str.__str__(value)
+    if isinstance(value, TrackedBytes):
+        return bytes.__new__(bytes, value)
+    if isinstance(value, dict):
+        return {
+            untrack_value(key): untrack_value(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [untrack_value(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(untrack_value(item) for item in value)
+    if isinstance(value, set):
+        return {untrack_value(item) for item in value}
+    if isinstance(value, frozenset):
+        return frozenset(untrack_value(item) for item in value)
+    return value
+
+
 def provenance_of(value: Any) -> Provenance:
     if isinstance(value, (TrackedStr, TrackedBytes)):
         return value.provenance

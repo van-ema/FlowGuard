@@ -214,6 +214,64 @@ OPENAI_API_KEY=... FLOWGUARD_AGENT_LOCAL=1 bash runtimes/python-taint/scripts/ru
 The OpenAI SDK is intentionally optional. The core Flowguard Python runtime does
 not depend on OpenAI or LangChain packages.
 
+## Reproduce The Model Request Guard Demo
+
+This offline OpenAI Agents SDK demo treats the model call itself as an egress
+boundary. A fake model requests a protected `read_secret` tool. Flowguard binds
+the secret provenance to the SDK `tool_call_id`, then blocks the next model
+request before the fake provider receives it:
+
+```sh
+bash runtimes/python-taint/scripts/run_model_request_guard_demo.sh
+```
+
+The Docker demo runs with `--network none` and needs no API key. Expected result:
+
+```text
+Flowguard Model Request Guard Demo
+result: BLOCKED SecretToModel
+provider_calls=1
+sensitive_provider_calls=0
+```
+
+Generated artifacts:
+
+- `logs/model-request-guard-demo.report.json`
+- `logs/model-request-guard-demo.events.jsonl`
+
+The report contains one allowed public model request and one blocked
+secret-derived request. It records labels, source references, destination,
+policy, and action without storing prompt, tool-output, or secret content.
+
+To guard a real SDK model, wrap the model or its provider:
+
+```python
+guarded_model = runtime.guard_openai_model(
+    model,
+    provider="openai",
+    model_name="gpt-5",
+    trust_zone="external",
+)
+
+with runtime.provenance_context.scope():
+    result = await Runner.run(
+        Agent(name="protected", model=guarded_model, tools=tools),
+        input=user_input,
+    )
+```
+
+An explicit provenance scope isolates concurrent agent runs and releases
+sidecar response and tool-call bindings when the run completes. Approved local
+or enterprise models use a `ModelRule.allow_and_propagate(...)` rule; their
+generated tool calls retain the sensitive provenance for later sink checks.
+
+For local execution, install the optional SDK and opt out of Docker:
+
+```sh
+python3 -m pip install openai-agents
+FLOWGUARD_MODEL_GUARD_LOCAL=1 bash runtimes/python-taint/scripts/run_model_request_guard_demo.sh
+```
+
 ## Reproduce The LangChain/LangGraph Demo
 
 This offline demo adapts Flowguard tools to LangChain's `StructuredTool`

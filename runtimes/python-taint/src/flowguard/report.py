@@ -6,7 +6,13 @@ from pathlib import Path
 from typing import Any, Iterable
 
 REPORT_SCHEMA_VERSION = "flowguard.report.v1"
-BLOCKED_EVENT_TYPES = frozenset({"http_send_blocked", "subprocess_blocked"})
+BLOCKED_EVENT_TYPES = frozenset(
+    {
+        "http_send_blocked",
+        "model_request_blocked",
+        "subprocess_blocked",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -16,6 +22,8 @@ class ReportSummary:
     blocked_count: int
     allowed_send_count: int
     precision_loss_count: int
+    model_request_count: int
+    allowed_model_request_count: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +67,23 @@ class ReportPrecisionLoss:
 
 
 @dataclass(frozen=True, slots=True)
+class ReportModelCall:
+    sequence: int
+    event_type: str
+    timestamp: str | None
+    target: str
+    provider: str
+    model: str
+    trust_zone: str
+    action: str
+    policy: str
+    labels: list[str]
+    sources: list[str]
+    transforms: list[dict[str, str]]
+    unknown_context_ids: list[str]
+
+
+@dataclass(frozen=True, slots=True)
 class FlowguardReport:
     """Structured view over runtime events for audit and demos."""
 
@@ -67,6 +92,7 @@ class FlowguardReport:
     violations: list[ReportViolation]
     allowed_sends: list[ReportNetworkSend]
     precision_losses: list[ReportPrecisionLoss]
+    model_calls: list[ReportModelCall]
     events: list[dict[str, Any]]
 
     @classmethod
@@ -87,12 +113,22 @@ class FlowguardReport:
             for event in copied_events
             if event.get("type") == "taint_precision_lost"
         ]
+        model_calls = [
+            _model_call_from_event(event)
+            for event in copied_events
+            if event.get("type")
+            in {"model_request_allowed", "model_request_blocked"}
+        ]
         summary = ReportSummary(
             event_count=len(copied_events),
             violation_count=len(violations),
             blocked_count=len(violations),
             allowed_send_count=len(allowed_sends),
             precision_loss_count=len(precision_losses),
+            model_request_count=len(model_calls),
+            allowed_model_request_count=sum(
+                call.event_type == "model_request_allowed" for call in model_calls
+            ),
         )
         return cls(
             schema_version=REPORT_SCHEMA_VERSION,
@@ -100,6 +136,7 @@ class FlowguardReport:
             violations=violations,
             allowed_sends=allowed_sends,
             precision_losses=precision_losses,
+            model_calls=model_calls,
             events=copied_events,
         )
 
@@ -110,6 +147,7 @@ class FlowguardReport:
             "violations": [asdict(violation) for violation in self.violations],
             "allowed_sends": [asdict(send) for send in self.allowed_sends],
             "precision_losses": [asdict(loss) for loss in self.precision_losses],
+            "model_calls": [asdict(call) for call in self.model_calls],
             "events": self.events,
         }
 
@@ -181,6 +219,25 @@ def _precision_loss_from_event(event: dict[str, Any]) -> ReportPrecisionLoss:
         input_types=_string_list(details.get("input_types")),
         output_type=str(details.get("output_type", "")),
         scope_id=_optional_string(details.get("scope_id")),
+    )
+
+
+def _model_call_from_event(event: dict[str, Any]) -> ReportModelCall:
+    details = _details(event)
+    return ReportModelCall(
+        sequence=_sequence(event),
+        event_type=str(event.get("type", "")),
+        timestamp=_timestamp(event),
+        target=_target(details),
+        provider=str(details.get("provider", "")),
+        model=str(details.get("model", "")),
+        trust_zone=str(details.get("trust_zone", "")),
+        action=str(details.get("action", "")),
+        policy=str(details.get("policy", "")),
+        labels=_string_list(details.get("labels")),
+        sources=_string_list(details.get("sources")),
+        transforms=_transform_list(details.get("transforms")),
+        unknown_context_ids=_string_list(details.get("unknown_context_ids")),
     )
 
 

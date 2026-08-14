@@ -4,6 +4,7 @@ from functools import wraps
 from typing import Any
 
 from ..tools import FlowguardTool
+from ..tracked import untrack_value
 
 
 def as_openai_tool(tool: FlowguardTool) -> Any:
@@ -25,5 +26,18 @@ def as_openai_tool(tool: FlowguardTool) -> Any:
     if tool.description is not None:
         kwargs["description_override"] = tool.description
 
-    return function_tool(**kwargs)(wrapped)
+    sdk_tool = function_tool(**kwargs)(wrapped)
+    invoke = getattr(sdk_tool, "on_invoke_tool", None)
+    if invoke is None:
+        return sdk_tool
 
+    async def guarded_invoke(context: Any, arguments_json: str) -> Any:
+        call_id = getattr(context, "tool_call_id", None)
+        if not isinstance(call_id, str):
+            call_id = None
+        with tool.runtime.provenance_context.activate_tool_call(call_id):
+            result = await invoke(context, arguments_json)
+        return untrack_value(result)
+
+    sdk_tool.on_invoke_tool = guarded_invoke
+    return sdk_tool

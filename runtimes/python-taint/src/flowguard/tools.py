@@ -30,8 +30,16 @@ class FlowguardTool:
     def function(self) -> Callable[..., Any]:
         return self._func
 
+    @property
+    def runtime(self) -> Any:
+        return self._runtime
+
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         context = ToolCallContext(name=self.name)
+        args, kwargs = self._runtime.provenance_context.prepare_tool_arguments(
+            args,
+            kwargs,
+        )
         self._runtime.emitter.emit(
             "tool_start",
             name=context.name,
@@ -51,6 +59,7 @@ class FlowguardTool:
             raise
 
         provenance = provenance_of(result)
+        self._runtime.provenance_context.bind_active_tool_output(provenance)
         self._runtime.emitter.emit(
             "tool_end",
             name=context.name,
