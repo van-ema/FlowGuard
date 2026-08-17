@@ -24,5 +24,6 @@ logs/*.events.jsonl
 logs/*.report.json
 
 # Python helper bytecode
+.venv/
 __pycache__/
 *.pyc

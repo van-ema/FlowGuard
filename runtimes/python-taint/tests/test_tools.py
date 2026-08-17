@@ -46,12 +46,17 @@ class ToolWrapperTests(unittest.TestCase):
         def noop() -> str:
             return "ok"
 
+        adapter_name = "flowguard.adapters.openai_agents"
+        old_adapter = sys.modules.pop(adapter_name, None)
         old_agents = sys.modules.get("agents")
         sys.modules["agents"] = None
         try:
             with self.assertRaisesRegex(RuntimeError, "OpenAI Agents SDK is not installed"):
                 noop.as_openai_tool()
         finally:
+            sys.modules.pop(adapter_name, None)
+            if old_adapter is not None:
+                sys.modules[adapter_name] = old_adapter
             if old_agents is not None:
                 sys.modules["agents"] = old_agents
             else:
@@ -60,6 +65,10 @@ class ToolWrapperTests(unittest.TestCase):
     def test_openai_adapter_wraps_tool_and_preserves_blocking(self) -> None:
         captured: dict[str, Any] = {}
         fake_agents = types.ModuleType("agents")
+        fake_tool_context = types.ModuleType("agents.tool_context")
+
+        class FakeSdkType:
+            pass
 
         def function_tool(**options: Any) -> Any:
             captured["options"] = options
@@ -71,8 +80,18 @@ class ToolWrapperTests(unittest.TestCase):
             return decorate
 
         fake_agents.function_tool = function_tool
+        fake_agents.Agent = FakeSdkType
+        fake_agents.FunctionTool = FakeSdkType
+        fake_agents.Handoff = FakeSdkType
+        fake_agents.RunConfig = FakeSdkType
+        fake_agents.RunContextWrapper = FakeSdkType
+        fake_tool_context.ToolContext = FakeSdkType
+        adapter_name = "flowguard.adapters.openai_agents"
+        old_adapter = sys.modules.pop(adapter_name, None)
         old_agents = sys.modules.get("agents")
+        old_tool_context = sys.modules.get("agents.tool_context")
         sys.modules["agents"] = fake_agents
+        sys.modules["agents.tool_context"] = fake_tool_context
 
         try:
             with tempfile.TemporaryDirectory() as tmpdir:
@@ -99,6 +118,13 @@ class ToolWrapperTests(unittest.TestCase):
                 self.assertEqual(captured["options"]["name_override"], "fg_send_report")
                 self.assertEqual(captured["options"]["description_override"], "Send a report.")
         finally:
+            sys.modules.pop(adapter_name, None)
+            if old_adapter is not None:
+                sys.modules[adapter_name] = old_adapter
+            if old_tool_context is None:
+                sys.modules.pop("agents.tool_context", None)
+            else:
+                sys.modules["agents.tool_context"] = old_tool_context
             if old_agents is None:
                 sys.modules.pop("agents", None)
             else:

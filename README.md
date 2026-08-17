@@ -260,6 +260,23 @@ with runtime.provenance_context.scope():
     )
 ```
 
+Existing SDK graphs can be protected in place without rebuilding their agents
+or `@function_tool` schemas:
+
+```python
+runtime.protect_openai_agent_graph(
+    triage_agent,
+    additional_agents=[guardrail_agent, jailbreak_guardrail_agent],
+)
+
+with runtime.provenance_context.scope():
+    result = await Runner.run(triage_agent, input=user_input)
+```
+
+The traversal follows direct and configured handoffs without looping. Agents
+hidden inside guardrail or application callbacks are not visible in the SDK
+graph and must be listed through `additional_agents`.
+
 An explicit provenance scope isolates concurrent agent runs and releases
 sidecar response and tool-call bindings when the run completes. Approved local
 or enterprise models use a `ModelRule.allow_and_propagate(...)` rule; their

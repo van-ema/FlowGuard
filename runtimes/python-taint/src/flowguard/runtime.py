@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import builtins
 import os
+from collections.abc import Iterable
 from pathlib import Path
 from typing import IO, Any, Protocol
 from urllib import request
@@ -187,6 +188,36 @@ class FlowguardRuntime:
             provider,
             provider_name=provider_name,
             trust_zone=trust_zone,
+        )
+
+    def protect_openai_agent_graph(
+        self,
+        root_agent: Any,
+        *,
+        model_provider: Any | None = None,
+        provider_name: str = "openai",
+        trust_zone: str = "external",
+        additional_agents: Iterable[Any] = (),
+    ) -> Any:
+        """Protect models and function tools in an existing SDK agent graph."""
+
+        try:
+            from .adapters.openai_agents import protect_openai_agent_graph
+        except ModuleNotFoundError as err:
+            if err.name != "agents":
+                raise
+            raise RuntimeError(
+                "OpenAI Agents SDK is not installed. Install openai-agents "
+                "before protecting an agent graph."
+            ) from err
+
+        return protect_openai_agent_graph(
+            self,
+            root_agent,
+            model_provider=model_provider,
+            provider_name=provider_name,
+            trust_zone=trust_zone,
+            additional_agents=additional_agents,
         )
 
     def block_unbrokered_subprocess(self, api: str) -> Decision:

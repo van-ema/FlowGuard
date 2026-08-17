@@ -68,7 +68,15 @@ class FlowguardTool:
         return result
 
     def as_openai_tool(self) -> Any:
-        from .adapters.openai_agents import as_openai_tool
+        try:
+            from .adapters.openai_agents import as_openai_tool
+        except ModuleNotFoundError as err:
+            if err.name != "agents":
+                raise
+            raise RuntimeError(
+                "OpenAI Agents SDK is not installed. Install openai-agents "
+                "before calling as_openai_tool()."
+            ) from err
 
         return as_openai_tool(self)
 
