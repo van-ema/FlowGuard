@@ -282,6 +282,33 @@ sidecar response and tool-call bindings when the run completes. Approved local
 or enterprise models use a `ModelRule.allow_and_propagate(...)` rule; their
 generated tool calls retain the sensitive provenance for later sink checks.
 
+### Harden An Existing OpenAI Agent Application
+
+The `openai/openai-cs-agents-demo` integration applies Flowguard to the
+upstream airline agent graph without modifying the submodule. A controlled
+customer record crosses an approved model boundary, retains its provenance,
+and is blocked when the model tries to pass it to an untrusted upload tool:
+
+```sh
+git submodule update --init --recursive
+export OPENAI_API_KEY="..."
+bash runtimes/python-taint/integrations/openai-cs-agents-demo/run_leak_demo.sh
+```
+
+Expected result:
+
+```text
+Flowguard OpenAI Customer Service Hardening Demo
+result: BLOCKED SecretToNetwork
+network_calls=0
+```
+
+The report and event stream are written to
+`logs/openai-cs-flowguard-demo.report.json` and
+`logs/openai-cs-flowguard-demo.events.jsonl`. The integration also provides a
+protected ChatKit server overlay with per-stream provenance isolation; see
+[`runtimes/python-taint/integrations/openai-cs-agents-demo/README.md`](runtimes/python-taint/integrations/openai-cs-agents-demo/README.md).
+
 For local execution, install the optional SDK and opt out of Docker:
 
 ```sh

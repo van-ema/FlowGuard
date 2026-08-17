@@ -141,7 +141,8 @@ class OpenAIAgentGraphTests(unittest.IsolatedAsyncioTestCase):
 
             @function_tool(failure_error_function=None)
             def read_secret(path: str) -> str:
-                with runtime.open(path) as handle:
+                # Existing SDK tools use normal IO; graph protection patches it.
+                with open(path, encoding="utf-8") as handle:
                     return handle.read()
 
             delegate = ReadSecretModel()

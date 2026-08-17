@@ -36,6 +36,8 @@ def as_openai_tool(tool: FlowguardTool) -> FunctionTool:
         kwargs["name_override"] = tool.name
     if tool.description is not None:
         kwargs["description_override"] = tool.description
+    # A policy block must stop the agent run, not become model-visible tool text.
+    kwargs["failure_error_function"] = None
 
     sdk_tool = function_tool(**kwargs)(wrapped)
     return _wrap_function_tool(sdk_tool, tool.runtime)
@@ -204,9 +206,11 @@ def _wrap_function_tool(
             if call_id
             else Provenance.empty()
         )
-        # Nested Flowguard tools use the active ID to restore tracked arguments.
-        with runtime.provenance_context.activate_tool_call(call_id):
-            result = await invoke(context, arguments_json)
+        # Existing tools get transparent file, network, and subprocess guards.
+        with runtime.protect():
+            # Nested Flowguard tools use the active ID to restore tracked arguments.
+            with runtime.provenance_context.activate_tool_call(call_id):
+                result = await invoke(context, arguments_json)
         output_provenance = input_provenance.merge(provenance_of(result))
         if call_id:
             # Existing SDK tools may serialize away tracked Python subclasses.

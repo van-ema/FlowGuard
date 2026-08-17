@@ -65,6 +65,8 @@ class ToolWrapperTests(unittest.TestCase):
     def test_openai_adapter_wraps_tool_and_preserves_blocking(self) -> None:
         captured: dict[str, Any] = {}
         fake_agents = types.ModuleType("agents")
+        fake_agents_models = types.ModuleType("agents.models")
+        fake_agents_interface = types.ModuleType("agents.models.interface")
         fake_tool_context = types.ModuleType("agents.tool_context")
 
         class FakeSdkType:
@@ -85,12 +87,17 @@ class ToolWrapperTests(unittest.TestCase):
         fake_agents.Handoff = FakeSdkType
         fake_agents.RunConfig = FakeSdkType
         fake_agents.RunContextWrapper = FakeSdkType
+        fake_agents_interface.ModelProvider = FakeSdkType
         fake_tool_context.ToolContext = FakeSdkType
         adapter_name = "flowguard.adapters.openai_agents"
         old_adapter = sys.modules.pop(adapter_name, None)
         old_agents = sys.modules.get("agents")
+        old_agents_models = sys.modules.get("agents.models")
+        old_agents_interface = sys.modules.get("agents.models.interface")
         old_tool_context = sys.modules.get("agents.tool_context")
         sys.modules["agents"] = fake_agents
+        sys.modules["agents.models"] = fake_agents_models
+        sys.modules["agents.models.interface"] = fake_agents_interface
         sys.modules["agents.tool_context"] = fake_tool_context
 
         try:
@@ -117,6 +124,7 @@ class ToolWrapperTests(unittest.TestCase):
                 self.assertEqual(transport.requests, [])
                 self.assertEqual(captured["options"]["name_override"], "fg_send_report")
                 self.assertEqual(captured["options"]["description_override"], "Send a report.")
+                self.assertIsNone(captured["options"]["failure_error_function"])
         finally:
             sys.modules.pop(adapter_name, None)
             if old_adapter is not None:
@@ -125,6 +133,14 @@ class ToolWrapperTests(unittest.TestCase):
                 sys.modules.pop("agents.tool_context", None)
             else:
                 sys.modules["agents.tool_context"] = old_tool_context
+            if old_agents_interface is None:
+                sys.modules.pop("agents.models.interface", None)
+            else:
+                sys.modules["agents.models.interface"] = old_agents_interface
+            if old_agents_models is None:
+                sys.modules.pop("agents.models", None)
+            else:
+                sys.modules["agents.models"] = old_agents_models
             if old_agents is None:
                 sys.modules.pop("agents", None)
             else:
