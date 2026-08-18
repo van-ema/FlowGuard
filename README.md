@@ -75,6 +75,9 @@ SECRET → NETWORK
 
 ## Reproduce The Python MVP PoC
 
+See the [Python taint demo index](runtimes/python-taint/demos/README.md) for a
+comparison of every supported demo and its threat model.
+
 This is the fastest public demo of the Python dynamic taint runtime:
 
 ```sh
@@ -260,10 +263,82 @@ with runtime.provenance_context.scope():
     )
 ```
 
+Existing SDK graphs can be protected in place without rebuilding their agents
+or `@function_tool` schemas:
+
+```python
+from flowguard import SourceRef, ToolSinkRule, ToolSourceRule
+
+runtime.protect_openai_agent_graph(
+    triage_agent,
+    additional_agents=[guardrail_agent, jailbreak_guardrail_agent],
+    source_rules=[
+        ToolSourceRule(
+            "get_trip_details",
+            labels={"CustomerData"},
+            source=SourceRef.tool("get_trip_details"),
+        ),
+    ],
+    sink_rules=[
+        ToolSinkRule(
+            "upload_customer_record",
+            labels={"CustomerData"},
+            policy="CustomerDataToNetwork",
+        ),
+    ],
+)
+
+with runtime.provenance_context.scope():
+    result = await Runner.run(triage_agent, input=user_input)
+```
+
+The traversal follows direct and configured handoffs without looping. Agents
+hidden inside guardrail or application callbacks are not visible in the SDK
+graph and must be listed through `additional_agents`.
+
 An explicit provenance scope isolates concurrent agent runs and releases
 sidecar response and tool-call bindings when the run completes. Approved local
 or enterprise models use a `ModelRule.allow_and_propagate(...)` rule; their
 generated tool calls retain the sensitive provenance for later sink checks.
+
+### Harden An Existing OpenAI Agent Application
+
+The `openai/openai-cs-agents-demo` integration applies Flowguard to the
+upstream airline agent graph without modifying the submodule. The primary demo
+uses only native agents and tools. It compares an allowed second model request
+containing `get_trip_details` output with a protected request blocked before
+the external provider call:
+
+```sh
+git submodule update --init --recursive
+export OPENAI_API_KEY="..."
+bash runtimes/python-taint/integrations/openai-cs-agents-demo/run_model_egress_demo.sh
+```
+
+Expected result:
+
+```text
+Flowguard Native Model Egress Demo
+case: baseline-sensitive
+result: DATA_REACHED_MODEL
+Flowguard Native Model Egress Demo
+case: protected-sensitive
+result: BLOCKED CustomerDataToExternalModel
+Flowguard Native Model Egress Demo
+case: protected-public
+result: ALLOWED
+```
+
+The controlled export-tool scenario remains available through
+`run_leak_demo.sh`.
+
+Add `--interactive` to the model-egress command for a protected prompt loop.
+
+The model-egress reports are written to
+`logs/openai-cs-model-egress-demo.<case>.report.json` with matching
+`.events.jsonl` streams. The integration also provides a
+protected ChatKit server overlay with per-stream provenance isolation; see
+[`runtimes/python-taint/integrations/openai-cs-agents-demo/README.md`](runtimes/python-taint/integrations/openai-cs-agents-demo/README.md).
 
 For local execution, install the optional SDK and opt out of Docker:
 

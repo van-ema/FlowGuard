@@ -1,0 +1,3 @@
+[submodule "runtimes/python-taint/integrations/openai-cs-agents-demo/upstream"]
+	path = runtimes/python-taint/integrations/openai-cs-agents-demo/upstream
+	url = https://github.com/openai/openai-cs-agents-demo.git

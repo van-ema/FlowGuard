@@ -11,6 +11,7 @@ BLOCKED_EVENT_TYPES = frozenset(
         "http_send_blocked",
         "model_request_blocked",
         "subprocess_blocked",
+        "tool_call_blocked",
     }
 )
 
