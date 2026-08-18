@@ -75,6 +75,9 @@ SECRET → NETWORK
 
 ## Reproduce The Python MVP PoC
 
+See the [Python taint demo index](runtimes/python-taint/demos/README.md) for a
+comparison of every supported demo and its threat model.
+
 This is the fastest public demo of the Python dynamic taint runtime:
 
 ```sh
@@ -301,45 +304,39 @@ generated tool calls retain the sensitive provenance for later sink checks.
 ### Harden An Existing OpenAI Agent Application
 
 The `openai/openai-cs-agents-demo` integration applies Flowguard to the
-upstream airline agent graph without modifying the submodule. It labels the
-native `get_trip_details` output, propagates that label through an approved
-model, and compares an unprotected export with a protected one:
+upstream airline agent graph without modifying the submodule. The primary demo
+uses only native agents and tools. It compares an allowed second model request
+containing `get_trip_details` output with a protected request blocked before
+the external provider call:
 
 ```sh
 git submodule update --init --recursive
 export OPENAI_API_KEY="..."
-bash runtimes/python-taint/integrations/openai-cs-agents-demo/run_leak_demo.sh
+bash runtimes/python-taint/integrations/openai-cs-agents-demo/run_model_egress_demo.sh
 ```
 
 Expected result:
 
 ```text
-Flowguard OpenAI Customer Service Hardening Demo
-scenario: leak
-mode: baseline
-result: LEAKED
-receiver_calls=1
-Flowguard OpenAI Customer Service Hardening Demo
-scenario: leak
-mode: protected
-result: BLOCKED CustomerDataToNetwork
-receiver_calls=0
+Flowguard Native Model Egress Demo
+case: baseline-sensitive
+result: DATA_REACHED_MODEL
+Flowguard Native Model Egress Demo
+case: protected-sensitive
+result: BLOCKED CustomerDataToExternalModel
+Flowguard Native Model Egress Demo
+case: protected-public
+result: ALLOWED
 ```
 
-Run the benign precision check with the same graph. It accesses and summarizes
-customer data but does not invoke the export sink:
+The controlled export-tool scenario remains available through
+`run_leak_demo.sh`.
 
-```sh
-FLOWGUARD_OPENAI_CS_SCENARIO=benign \
-  bash runtimes/python-taint/integrations/openai-cs-agents-demo/run_leak_demo.sh
-```
+Add `--interactive` to the model-egress command for a protected prompt loop.
 
-Both baseline and protected modes must report `result: ALLOWED`,
-`receiver_calls=0`; the protected report must contain zero violations.
-
-The report and event stream are written to
-`logs/openai-cs-flowguard-demo.report.json` and
-`logs/openai-cs-flowguard-demo.events.jsonl`. The integration also provides a
+The model-egress reports are written to
+`logs/openai-cs-model-egress-demo.<case>.report.json` with matching
+`.events.jsonl` streams. The integration also provides a
 protected ChatKit server overlay with per-stream provenance isolation; see
 [`runtimes/python-taint/integrations/openai-cs-agents-demo/README.md`](runtimes/python-taint/integrations/openai-cs-agents-demo/README.md).
 

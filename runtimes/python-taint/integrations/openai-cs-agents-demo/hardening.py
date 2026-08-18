@@ -21,6 +21,7 @@ from flowguard import (
 # Integration-defined label; its behavior comes from the rules below.
 CUSTOMER_DATA_LABEL = "CustomerData"
 CUSTOMER_DATA_TO_NETWORK_POLICY = "CustomerDataToNetwork"
+CUSTOMER_DATA_TO_EXTERNAL_MODEL_POLICY = "CustomerDataToExternalModel"
 CUSTOMER_RECORD_SOURCE_TOOL = "get_trip_details"
 UPLOAD_CUSTOMER_RECORD_TOOL = "upload_customer_record"
 
@@ -77,6 +78,29 @@ def create_airline_runtime(
                     labels={CUSTOMER_DATA_LABEL},
                     destinations={destination},
                     policy="ApprovedCustomerDataToModel",
+                )
+            ]
+        ),
+    )
+
+
+def create_model_egress_blocking_runtime(
+    *,
+    provider_name: str = "openai",
+    trust_zone: str = "external",
+    event_log: str | Path | None = None,
+) -> FlowguardRuntime:
+    """Create a policy that blocks customer data from an external model."""
+
+    destination = f"model:{provider_name}:*:{trust_zone}"
+    return FlowguardRuntime(
+        event_log=event_log,
+        model_policy=ModelEgressPolicy(
+            [
+                ModelRule.block(
+                    labels={CUSTOMER_DATA_LABEL},
+                    destinations={destination},
+                    policy=CUSTOMER_DATA_TO_EXTERNAL_MODEL_POLICY,
                 )
             ]
         ),
@@ -141,25 +165,19 @@ def harden_airline_agent_graph(
 ) -> HardenedAirlineGraph:
     """Protect native customer-data sources and the controlled export sink."""
 
-    source_names = {getattr(tool, "name", None) for tool in root_agent.tools}
-    if CUSTOMER_RECORD_SOURCE_TOOL not in source_names:
-        raise ValueError(
-            f"agent graph root must expose {CUSTOMER_RECORD_SOURCE_TOOL}"
-        )
-
     # Add the custom demo sink before Flowguard wraps the complete graph.
     upload_tool = add_customer_export_tool(
         root_agent,
         leak_target=leak_target,
         receiver=receiver,
     )
-    runtime.protect_openai_agent_graph(
+    protect_airline_agent_graph(
+        runtime,
         root_agent,
         model_provider=model_provider,
         provider_name=provider_name,
         trust_zone=trust_zone,
         additional_agents=additional_agents,
-        source_rules=airline_source_rules(),
         sink_rules=(
             ToolSinkRule(
                 UPLOAD_CUSTOMER_RECORD_TOOL,
@@ -174,3 +192,32 @@ def harden_airline_agent_graph(
         root_agent=root_agent,
         upload_tool=upload_tool,
     )
+
+
+def protect_airline_agent_graph(
+    runtime: FlowguardRuntime,
+    root_agent: Agent[Any],
+    *,
+    model_provider: ModelProvider | None = None,
+    provider_name: str = "openai",
+    trust_zone: str = "external",
+    additional_agents: Iterable[Agent[Any]] = (),
+    sink_rules: Iterable[ToolSinkRule] = (),
+) -> Agent[Any]:
+    """Protect native airline sources without adding agents or tools."""
+
+    source_names = {getattr(tool, "name", None) for tool in root_agent.tools}
+    if CUSTOMER_RECORD_SOURCE_TOOL not in source_names:
+        raise ValueError(
+            f"agent graph root must expose {CUSTOMER_RECORD_SOURCE_TOOL}"
+        )
+    runtime.protect_openai_agent_graph(
+        root_agent,
+        model_provider=model_provider,
+        provider_name=provider_name,
+        trust_zone=trust_zone,
+        additional_agents=additional_agents,
+        source_rules=airline_source_rules(),
+        sink_rules=sink_rules,
+    )
+    return root_agent

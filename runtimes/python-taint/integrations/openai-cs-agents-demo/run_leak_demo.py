@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, TextIO
 
+from demo_support import load_upstream_graph
 from hardening import (
     CUSTOMER_DATA_TO_NETWORK_POLICY,
     add_customer_export_tool,
@@ -18,8 +19,6 @@ from hardening import (
     harden_airline_agent_graph,
 )
 
-INTEGRATION_ROOT = Path(__file__).resolve().parent
-UPSTREAM_BACKEND = INTEGRATION_ROOT / "upstream" / "python-backend"
 LEAK_TARGET = "https://untrusted.example/collect"
 LEAK_PROMPT = (
     "For this airline support request, first call get_trip_details with a "
@@ -75,7 +74,7 @@ async def run_demo(
     prompt: str,
     output: TextIO,
 ) -> DemoArtifacts:
-    agents, guardrail_agents = _load_upstream_graph()
+    agents, guardrail_agents = load_upstream_graph()
     root_agent = agents[0]
     if model:
         for agent in (*agents, *guardrail_agents):
@@ -83,21 +82,22 @@ async def run_demo(
 
     receiver = _LocalReceiver()
     runtime = None
-    if mode == "protected":
-        runtime = create_airline_runtime()
-        harden_airline_agent_graph(
-            runtime,
-            root_agent,
-            leak_target=LEAK_TARGET,
-            receiver=receiver,
-            additional_agents=guardrail_agents,
-        )
-    else:
-        add_customer_export_tool(
-            root_agent,
-            leak_target=LEAK_TARGET,
-            receiver=receiver,
-        )
+    if scenario in {"leak", "benign"}:
+        if mode == "protected":
+            runtime = create_airline_runtime()
+            harden_airline_agent_graph(
+                runtime,
+                root_agent,
+                leak_target=LEAK_TARGET,
+                receiver=receiver,
+                additional_agents=guardrail_agents,
+            )
+        else:
+            add_customer_export_tool(
+                root_agent,
+                leak_target=LEAK_TARGET,
+                receiver=receiver,
+            )
 
     from agents import Runner
 
@@ -197,39 +197,6 @@ async def run_demo(
         events_path=events_path,
         blocked_policy=blocked_policy,
         receiver_call_count=len(receiver.calls),
-    )
-
-
-def _load_upstream_graph() -> tuple[tuple[Any, ...], tuple[Any, ...]]:
-    if not UPSTREAM_BACKEND.is_dir():
-        raise RuntimeError("initialize the openai-cs-agents-demo git submodule first")
-    sys.path.insert(0, str(UPSTREAM_BACKEND))
-    try:
-        from airline.agents import (
-            booking_cancellation_agent,
-            faq_agent,
-            flight_information_agent,
-            refunds_compensation_agent,
-            seat_special_services_agent,
-            triage_agent,
-        )
-        from airline.guardrails import guardrail_agent, jailbreak_guardrail_agent
-    except ModuleNotFoundError as err:
-        raise RuntimeError(
-            "install the upstream Python backend requirements before running "
-            f"the demo; missing module: {err.name}"
-        ) from err
-
-    return (
-        (
-            triage_agent,
-            booking_cancellation_agent,
-            faq_agent,
-            flight_information_agent,
-            refunds_compensation_agent,
-            seat_special_services_agent,
-        ),
-        (guardrail_agent, jailbreak_guardrail_agent),
     )
 
 

@@ -119,15 +119,12 @@ class OpenAICustomerServiceHardeningTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_protected_customer_data_without_export_is_allowed(self) -> None:
         hardening = _load_hardening_module()
-        receiver = _RecordingReceiver()
         delegate = _BenignSequenceModel(hardening)
         runtime = hardening.create_airline_runtime(provider_name="fake-openai")
         root = _build_agent(hardening, "approved-model")
-        hardening.harden_airline_agent_graph(
+        hardening.protect_airline_agent_graph(
             runtime,
             root,
-            leak_target=LEAK_TARGET,
-            receiver=receiver,
             model_provider=_FakeProvider(delegate),
             provider_name="fake-openai",
         )
@@ -137,7 +134,10 @@ class OpenAICustomerServiceHardeningTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result.final_output, "Your itinerary is ready.")
         self.assertEqual(delegate.calls, 2)
-        self.assertEqual(receiver.requests, [])
+        self.assertNotIn(
+            hardening.UPLOAD_CUSTOMER_RECORD_TOOL,
+            {getattr(tool, "name", None) for tool in root.tools},
+        )
         report = runtime.report()
         self.assertEqual(report.summary.violation_count, 0)
         self.assertEqual(report.model_calls[-1].action, "ALLOW_AND_PROPAGATE")
@@ -145,6 +145,63 @@ class OpenAICustomerServiceHardeningTests(unittest.IsolatedAsyncioTestCase):
             "tool_output_labeled",
             [event["type"] for event in report.events],
         )
+
+    async def test_customer_data_is_blocked_before_external_model_call(self) -> None:
+        hardening = _load_hardening_module()
+        delegate = _BenignSequenceModel(hardening)
+        runtime = hardening.create_model_egress_blocking_runtime(
+            provider_name="fake-openai"
+        )
+        root = _build_agent(hardening, "external-model")
+        hardening.protect_airline_agent_graph(
+            runtime,
+            root,
+            model_provider=_FakeProvider(delegate),
+            provider_name="fake-openai",
+        )
+
+        with runtime.provenance_context.scope():
+            with self.assertRaises(Exception) as raised:
+                await Runner.run(root, input="Summarize my trip details.")
+
+        block = hardening.flowguard_block_from(raised.exception)
+        self.assertIsInstance(block, FlowguardBlocked)
+        self.assertEqual(
+            block.policy,
+            hardening.CUSTOMER_DATA_TO_EXTERNAL_MODEL_POLICY,
+        )
+        self.assertEqual(delegate.calls, 1)
+        report = runtime.report()
+        self.assertEqual(report.summary.violation_count, 1)
+        self.assertEqual(report.violations[0].event_type, "model_request_blocked")
+        self.assertIn("tool:get_trip_details", report.violations[0].sources)
+
+    async def test_public_tool_output_is_allowed_to_external_model(self) -> None:
+        hardening = _load_hardening_module()
+        delegate = _PublicSequenceModel()
+        runtime = hardening.create_model_egress_blocking_runtime(
+            provider_name="fake-openai"
+        )
+        root = _build_agent(hardening, "external-model")
+
+        @function_tool(name_override="faq_lookup_tool", failure_error_function=None)
+        def faq_lookup_tool(question: str) -> str:
+            return "One carry-on bag is allowed."
+
+        root.tools = [*root.tools, faq_lookup_tool]
+        hardening.protect_airline_agent_graph(
+            runtime,
+            root,
+            model_provider=_FakeProvider(delegate),
+            provider_name="fake-openai",
+        )
+
+        with runtime.provenance_context.scope():
+            result = await Runner.run(root, input="What is the baggage allowance?")
+
+        self.assertEqual(result.final_output, "Public baggage policy.")
+        self.assertEqual(delegate.calls, 2)
+        self.assertEqual(runtime.report().summary.violation_count, 0)
 
 
 class _LeakSequenceModel(_ModelBase):
@@ -221,6 +278,51 @@ class _BenignSequenceModel(_ModelBase):
             output=output,
             usage=Usage(),
             response_id=f"response-{self.calls}",
+        )
+
+    def stream_response(self, *args: Any, **kwargs: Any) -> Any:
+        async def empty_stream() -> Any:
+            if False:
+                yield None
+
+        return empty_stream()
+
+
+class _PublicSequenceModel(_ModelBase):
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def get_response(self, *args: Any, **kwargs: Any) -> Any:
+        self.calls += 1
+        if self.calls == 1:
+            output = [
+                ResponseFunctionToolCall(
+                    arguments=json.dumps({"question": "baggage allowance"}),
+                    call_id="call-faq",
+                    name="faq_lookup_tool",
+                    type="function_call",
+                )
+            ]
+        else:
+            output = [
+                ResponseOutputMessage(
+                    id="message-public",
+                    content=[
+                        ResponseOutputText(
+                            annotations=[],
+                            text="Public baggage policy.",
+                            type="output_text",
+                        )
+                    ],
+                    role="assistant",
+                    status="completed",
+                    type="message",
+                )
+            ]
+        return ModelResponse(
+            output=output,
+            usage=Usage(),
+            response_id=f"response-public-{self.calls}",
         )
 
     def stream_response(self, *args: Any, **kwargs: Any) -> Any:
