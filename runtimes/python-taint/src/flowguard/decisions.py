@@ -54,6 +54,28 @@ class Decision:
         )
 
     @classmethod
+    def block_sensitive_to_tool(
+        cls,
+        target: str,
+        provenance: Provenance,
+        *,
+        policy: str,
+    ) -> "Decision":
+        """Blocks labeled data before an existing tool callback executes."""
+
+        sources = ", ".join(source.display() for source in provenance.sources)
+        return cls(
+            kind="Block",
+            policy=policy,
+            target=target,
+            explanation=(
+                f"Sensitive data from {sources or 'tracked input'} would enter "
+                f"tool sink {target}"
+            ),
+            provenance=provenance,
+        )
+
+    @classmethod
     def block_untracked_model_context(
         cls,
         target: str,

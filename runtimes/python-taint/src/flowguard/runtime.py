@@ -20,7 +20,7 @@ from .precision import PrecisionLoss, PrecisionMode, normalize_precision_mode
 from .provenance import SECRET_LABEL, Provenance, SourceRef
 from .provenance_context import ProvenanceContext
 from .tracked import provenance_of, track_value
-from .tools import FlowguardTool
+from .tools import FlowguardTool, ToolSinkRule, ToolSourceRule
 
 _REAL_OPEN = builtins.open
 
@@ -198,6 +198,8 @@ class FlowguardRuntime:
         provider_name: str = "openai",
         trust_zone: str = "external",
         additional_agents: Iterable[Any] = (),
+        source_rules: Iterable[ToolSourceRule] = (),
+        sink_rules: Iterable[ToolSinkRule] = (),
     ) -> Any:
         """Protect models and function tools in an existing SDK agent graph."""
 
@@ -218,6 +220,8 @@ class FlowguardRuntime:
             provider_name=provider_name,
             trust_zone=trust_zone,
             additional_agents=additional_agents,
+            source_rules=source_rules,
+            sink_rules=sink_rules,
         )
 
     def block_unbrokered_subprocess(self, api: str) -> Decision:

@@ -7,7 +7,16 @@ import unittest
 from pathlib import Path
 from typing import Any
 
-from flowguard import FlowguardBlocked, FlowguardRuntime, FlowguardTool, TrackedStr
+from flowguard import (
+    FlowguardBlocked,
+    FlowguardRuntime,
+    FlowguardTool,
+    Provenance,
+    SourceRef,
+    ToolSinkRule,
+    ToolSourceRule,
+    TrackedStr,
+)
 
 
 class FakeHttpTransport:
@@ -20,6 +29,38 @@ class FakeHttpTransport:
 
 
 class ToolWrapperTests(unittest.TestCase):
+    def test_declarative_tool_rules_validate_and_match_labels(self) -> None:
+        source_rule = ToolSourceRule(
+            "get_trip_details",
+            labels={"CustomerData"},
+            source=SourceRef.tool("get_trip_details"),
+        )
+        sink_rule = ToolSinkRule(
+            "upload_customer_record",
+            labels={"CustomerData"},
+            policy="CustomerDataToNetwork",
+        )
+
+        self.assertEqual(source_rule.provenance.labels, {"CustomerData"})
+        self.assertEqual(
+            source_rule.provenance.sources,
+            (SourceRef.tool("get_trip_details"),),
+        )
+        self.assertTrue(
+            sink_rule.matches(
+                Provenance.from_source(
+                    "CustomerData",
+                    SourceRef.tool("get_trip_details"),
+                )
+            )
+        )
+        with self.assertRaises(ValueError):
+            ToolSourceRule(
+                "get_trip_details",
+                labels=set(),
+                source=SourceRef.tool("x"),
+            )
+
     def test_tool_wrapper_emits_events_and_preserves_tracked_return(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             secret_path = Path(tmpdir) / "id_rsa"

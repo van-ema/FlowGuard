@@ -5,10 +5,12 @@ This overlay protects the existing agents from the
 
 - traverses and protects the cyclic airline handoff graph;
 - explicitly protects the two guardrail agents hidden in callbacks;
+- labels plain outputs from native customer-data tools such as
+  `get_trip_details` without changing upstream code;
 - runs existing SDK tools inside Flowguard's file, network, and subprocess guards;
-- permits the approved model to process the controlled customer record while
+- permits the approved model to process customer trip data while
   preserving its provenance;
-- blocks the model-derived record before the untrusted transport is called.
+- blocks the model-derived record before the controlled export callback runs.
 
 Run the live demo in a restricted Docker container:
 
@@ -22,17 +24,43 @@ Expected result:
 
 ```text
 Flowguard OpenAI Customer Service Hardening Demo
-result: BLOCKED SecretToNetwork
-network_calls=0
+scenario: leak
+mode: baseline
+result: LEAKED
+receiver_calls=1
+Flowguard OpenAI Customer Service Hardening Demo
+scenario: leak
+mode: protected
+result: BLOCKED CustomerDataToNetwork
+receiver_calls=0
 ```
+
+Run the no-false-positive scenario:
+
+```sh
+FLOWGUARD_OPENAI_CS_SCENARIO=benign \
+  bash runtimes/python-taint/integrations/openai-cs-agents-demo/run_leak_demo.sh
+```
+
+This scenario still calls `get_trip_details`, so `CustomerData` reaches the
+approved model. It does not call the export tool. Baseline and protected modes
+must both report `result: ALLOWED` and `receiver_calls=0`; protected mode also
+requires a labeled tool-output event and zero violations.
 
 Reports are written to:
 
 - `logs/openai-cs-flowguard-demo.report.json`
 - `logs/openai-cs-flowguard-demo.events.jsonl`
+- `logs/openai-cs-flowguard-demo.baseline.summary.json`
+- `logs/openai-cs-flowguard-demo.protected.summary.json`
+- `logs/openai-cs-flowguard-demo.benign.baseline.summary.json`
+- `logs/openai-cs-flowguard-demo.benign.protected.summary.json`
+- `logs/openai-cs-flowguard-demo.benign.report.json`
+- `logs/openai-cs-flowguard-demo.benign.events.jsonl`
 
-The fixture contains fake data only. The report records its source and
-transformation path, but not its contents.
+The receiver is local to each demo process and retains only payload metadata.
+The report records source labels and the policy path, but not customer-data
+contents.
 
 The full upstream ChatKit backend can use the protected server overlay:
 

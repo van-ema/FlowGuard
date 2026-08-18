@@ -4,6 +4,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
 
+# Labels are an open policy vocabulary. Secret is the only built-in label and
+# receives automatic file-source and network-sink handling. Integrations may
+# define labels such as CustomerData or PII, but must also declare matching
+# source, model-egress, and sink rules for those labels.
 SECRET_LABEL = "Secret"
 
 
@@ -15,6 +19,10 @@ class SourceRef:
     @classmethod
     def file(cls, path: str | Path) -> "SourceRef":
         return cls(kind="file", name=str(path))
+
+    @classmethod
+    def tool(cls, name: str) -> "SourceRef":
+        return cls(kind="tool", name=name)
 
     def display(self) -> str:
         return f"{self.kind}:{self.name}"
@@ -36,7 +44,8 @@ class TransformStep:
 
 @dataclass(frozen=True, slots=True)
 class Provenance:
-    # Security labels carried by this value, for example "Secret".
+    # Security labels carried by this value. Values are policy-defined strings;
+    # see SECRET_LABEL above for the built-in behavior.
     labels: frozenset[str] = field(default_factory=frozenset)
     # Original data sources that introduced the labels.
     sources: tuple[SourceRef, ...] = field(default_factory=tuple)

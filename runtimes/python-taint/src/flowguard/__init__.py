@@ -14,7 +14,7 @@ from .provenance_context import ProvenanceContext
 from .report import FlowguardReport
 from .runtime import FlowguardRuntime
 from .tracked import TrackedBytes, TrackedStr
-from .tools import FlowguardTool, ToolCallContext
+from .tools import FlowguardTool, ToolCallContext, ToolSinkRule, ToolSourceRule
 
 
 def protect_openai_agent_graph(*args: Any, **kwargs: Any) -> Any:
@@ -48,5 +48,7 @@ __all__ = [
     "TrackedBytes",
     "TrackedStr",
     "ToolCallContext",
+    "ToolSinkRule",
+    "ToolSourceRule",
     "protect_openai_agent_graph",
 ]

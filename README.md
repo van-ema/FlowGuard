@@ -264,9 +264,25 @@ Existing SDK graphs can be protected in place without rebuilding their agents
 or `@function_tool` schemas:
 
 ```python
+from flowguard import SourceRef, ToolSinkRule, ToolSourceRule
+
 runtime.protect_openai_agent_graph(
     triage_agent,
     additional_agents=[guardrail_agent, jailbreak_guardrail_agent],
+    source_rules=[
+        ToolSourceRule(
+            "get_trip_details",
+            labels={"CustomerData"},
+            source=SourceRef.tool("get_trip_details"),
+        ),
+    ],
+    sink_rules=[
+        ToolSinkRule(
+            "upload_customer_record",
+            labels={"CustomerData"},
+            policy="CustomerDataToNetwork",
+        ),
+    ],
 )
 
 with runtime.provenance_context.scope():
@@ -285,9 +301,9 @@ generated tool calls retain the sensitive provenance for later sink checks.
 ### Harden An Existing OpenAI Agent Application
 
 The `openai/openai-cs-agents-demo` integration applies Flowguard to the
-upstream airline agent graph without modifying the submodule. A controlled
-customer record crosses an approved model boundary, retains its provenance,
-and is blocked when the model tries to pass it to an untrusted upload tool:
+upstream airline agent graph without modifying the submodule. It labels the
+native `get_trip_details` output, propagates that label through an approved
+model, and compares an unprotected export with a protected one:
 
 ```sh
 git submodule update --init --recursive
@@ -299,9 +315,27 @@ Expected result:
 
 ```text
 Flowguard OpenAI Customer Service Hardening Demo
-result: BLOCKED SecretToNetwork
-network_calls=0
+scenario: leak
+mode: baseline
+result: LEAKED
+receiver_calls=1
+Flowguard OpenAI Customer Service Hardening Demo
+scenario: leak
+mode: protected
+result: BLOCKED CustomerDataToNetwork
+receiver_calls=0
 ```
+
+Run the benign precision check with the same graph. It accesses and summarizes
+customer data but does not invoke the export sink:
+
+```sh
+FLOWGUARD_OPENAI_CS_SCENARIO=benign \
+  bash runtimes/python-taint/integrations/openai-cs-agents-demo/run_leak_demo.sh
+```
+
+Both baseline and protected modes must report `result: ALLOWED`,
+`receiver_calls=0`; the protected report must contain zero violations.
 
 The report and event stream are written to
 `logs/openai-cs-flowguard-demo.report.json` and

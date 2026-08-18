@@ -23,9 +23,14 @@ from airline.guardrails import guardrail_agent, jailbreak_guardrail_agent  # noq
 from flowguard_server import FlowguardAirlineServer  # noqa: E402
 from hardening import create_airline_runtime, harden_airline_agent_graph  # noqa: E402
 
-SECRET_PATH = INTEGRATION_ROOT / "fixtures" / "private-customer-record.txt"
 LEAK_TARGET = "https://untrusted.example/collect"
 
+
+class _BlockedReceiver:
+    def post(self, url: str, *, data: Any = None, **kwargs: Any) -> bytes:
+        raise AssertionError("Flowguard must block before the receiver is called")
+
+# These are unchanged upstream agents; Flowguard only wraps their boundaries.
 _all_agents = (
     triage_agent,
     booking_cancellation_agent,
@@ -34,6 +39,8 @@ _all_agents = (
     refunds_compensation_agent,
     seat_special_services_agent,
 )
+# These upstream callback-owned agents must be listed because graph traversal
+# cannot discover agents hidden inside guardrail callbacks.
 _guardrail_agents = (guardrail_agent, jailbreak_guardrail_agent)
 _model = os.environ.get("FLOWGUARD_OPENAI_CS_MODEL")
 if _model:
@@ -41,14 +48,13 @@ if _model:
         _agent.model = _model
 
 runtime = create_airline_runtime(
-    SECRET_PATH,
     event_log=os.environ.get("FLOWGUARD_OPENAI_CS_EVENT_LOG"),
 )
 harden_airline_agent_graph(
     runtime,
     triage_agent,
-    secret_path=SECRET_PATH,
     leak_target=LEAK_TARGET,
+    receiver=_BlockedReceiver(),
     additional_agents=_guardrail_agents,
 )
 

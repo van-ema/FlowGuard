@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from copy import copy
+from dataclasses import dataclass
 from functools import wraps
 from typing import Any
 
@@ -16,12 +17,22 @@ from agents import (
 from agents.models.interface import ModelProvider
 from agents.tool_context import ToolContext
 
+from ..decisions import Decision
+from ..exceptions import FlowguardBlocked
 from ..provenance import Provenance
 from ..runtime import FlowguardRuntime
-from ..tools import FlowguardTool
+from ..tools import FlowguardTool, ToolSinkRule, ToolSourceRule
 from ..tracked import provenance_of, untrack_value
 
 _PROTECTED_RUNTIME_ATTR = "_flowguard_protected_runtime"
+_PROTECTED_TOOL_STATE_ATTR = "_flowguard_tool_protection_state"
+
+
+@dataclass(slots=True)
+class _ToolProtectionState:
+    runtime: FlowguardRuntime
+    source_provenance: Provenance
+    sink_rules: tuple[ToolSinkRule, ...]
 
 
 def as_openai_tool(tool: FlowguardTool) -> FunctionTool:
@@ -51,6 +62,8 @@ def protect_openai_agent_graph(
     provider_name: str = "openai",
     trust_zone: str = "external",
     additional_agents: Iterable[Agent[Any]] = (),
+    source_rules: Iterable[ToolSourceRule] = (),
+    sink_rules: Iterable[ToolSinkRule] = (),
 ) -> Agent[Any]:
     """Protect an existing OpenAI Agents SDK graph in place.
 
@@ -71,6 +84,8 @@ def protect_openai_agent_graph(
         model_provider=model_provider,
         provider_name=provider_name,
         trust_zone=trust_zone,
+        source_rules=source_rules,
+        sink_rules=sink_rules,
     )
     protector.protect(root_agent)
     for agent in additional_agents:
@@ -86,11 +101,15 @@ class _AgentGraphProtector:
         model_provider: ModelProvider,
         provider_name: str,
         trust_zone: str,
+        source_rules: Iterable[ToolSourceRule],
+        sink_rules: Iterable[ToolSinkRule],
     ) -> None:
         self.runtime = runtime
         self.model_provider = model_provider
         self.provider_name = provider_name
         self.trust_zone = trust_zone
+        self.source_provenance = _source_provenance_by_tool(source_rules)
+        self.sink_rules = _sink_rules_by_tool(sink_rules)
         self._visited_agents: set[int] = set()
 
     def protect(self, root_agent: Agent[Any]) -> None:
@@ -112,7 +131,15 @@ class _AgentGraphProtector:
                 if isinstance(nested_agent, Agent):
                     pending.append(nested_agent)
                 if isinstance(tool, FunctionTool):
-                    tool = _wrap_function_tool(tool, self.runtime)
+                    tool = _wrap_function_tool(
+                        tool,
+                        self.runtime,
+                        source_provenance=self.source_provenance.get(
+                            tool.name,
+                            Provenance.empty(),
+                        ),
+                        sink_rules=self.sink_rules.get(tool.name, ()),
+                    )
                 protected_tools.append(tool)
             agent.tools = protected_tools
 
@@ -177,6 +204,9 @@ class _AgentGraphProtector:
 def _wrap_function_tool(
     tool: FunctionTool,
     runtime: FlowguardRuntime,
+    *,
+    source_provenance: Provenance | None = None,
+    sink_rules: Iterable[ToolSinkRule] = (),
 ) -> FunctionTool:
     """Wrap an SDK FunctionTool while keeping provenance in the sidecar."""
 
@@ -184,14 +214,30 @@ def _wrap_function_tool(
     if invoke is None:
         return tool
 
+    declared_source = source_provenance or Provenance.empty()
+    declared_sinks = tuple(sink_rules)
     protected_runtime = getattr(tool, _PROTECTED_RUNTIME_ATTR, None)
     if protected_runtime is not None:
         _require_same_runtime(tool, runtime, "tool")
+        state = getattr(tool, _PROTECTED_TOOL_STATE_ATTR, None)
+        if isinstance(state, _ToolProtectionState):
+            state.source_provenance = state.source_provenance.merge(declared_source)
+            state.sink_rules = tuple(
+                dict.fromkeys((*state.sink_rules, *declared_sinks))
+            )
         return tool
 
     # Keep the original tool unchanged and preserve its schema and SDK options.
+    # For example, get_trip_details.on_invoke_tool becomes guarded_invoke;
+    # guarded_invoke checks provenance, calls the original callback, and then
+    # labels its output before returning it to the SDK.
     protected_tool = copy(tool)
     invoke = protected_tool.on_invoke_tool
+    state = _ToolProtectionState(
+        runtime=runtime,
+        source_provenance=declared_source,
+        sink_rules=declared_sinks,
+    )
 
     async def guarded_invoke(
         context: ToolContext[Any],
@@ -206,21 +252,83 @@ def _wrap_function_tool(
             if call_id
             else Provenance.empty()
         )
+
+        # Before invoking the tool, guarded_invoke()
+        # compares the call provenance with every applicable rule
+        for sink_rule in state.sink_rules:
+            if not sink_rule.matches(input_provenance):
+                continue
+            decision = Decision.block_sensitive_to_tool(
+                sink_rule.target,
+                input_provenance,
+                policy=sink_rule.policy,
+            )
+            runtime.emitter.emit(
+                "tool_call_blocked",
+                name=protected_tool.name,
+                target=decision.target,
+                policy=decision.policy,
+                explanation=decision.explanation,
+                labels=sorted(input_provenance.labels),
+                sources=[
+                    source.display() for source in input_provenance.sources
+                ],
+                transforms=[
+                    transform.to_dict()
+                    for transform in input_provenance.transforms
+                ],
+                scope_id=runtime.current_scope_id(),
+            )
+            raise FlowguardBlocked(decision)
         # Existing tools get transparent file, network, and subprocess guards.
         with runtime.protect():
             # Nested Flowguard tools use the active ID to restore tracked arguments.
             with runtime.provenance_context.activate_tool_call(call_id):
                 result = await invoke(context, arguments_json)
-        output_provenance = input_provenance.merge(provenance_of(result))
+        output_provenance = input_provenance.merge(provenance_of(result)).merge(
+            state.source_provenance
+        )
         if call_id:
             # Existing SDK tools may serialize away tracked Python subclasses.
             runtime.provenance_context.bind_tool_output(call_id, output_provenance)
+        if state.source_provenance.labels:
+            runtime.emitter.emit(
+                "tool_output_labeled",
+                name=protected_tool.name,
+                labels=sorted(output_provenance.labels),
+                sources=[source.display() for source in output_provenance.sources],
+                transforms=[
+                    transform.to_dict()
+                    for transform in output_provenance.transforms
+                ],
+                scope_id=runtime.current_scope_id(),
+            )
         # The plain value crosses the SDK boundary; provenance stays sidecar.
         return untrack_value(result)
 
     protected_tool.on_invoke_tool = guarded_invoke
     setattr(protected_tool, _PROTECTED_RUNTIME_ATTR, runtime)
+    setattr(protected_tool, _PROTECTED_TOOL_STATE_ATTR, state)
     return protected_tool
+
+
+def _source_provenance_by_tool(
+    rules: Iterable[ToolSourceRule],
+) -> dict[str, Provenance]:
+    mapped: dict[str, Provenance] = {}
+    for rule in rules:
+        current = mapped.get(rule.tool_name, Provenance.empty())
+        mapped[rule.tool_name] = current.merge(rule.provenance)
+    return mapped
+
+
+def _sink_rules_by_tool(
+    rules: Iterable[ToolSinkRule],
+) -> dict[str, tuple[ToolSinkRule, ...]]:
+    mapped: dict[str, list[ToolSinkRule]] = {}
+    for rule in rules:
+        mapped.setdefault(rule.tool_name, []).append(rule)
+    return {name: tuple(tool_rules) for name, tool_rules in mapped.items()}
 
 
 def _configured_handoff_target(handoff: Handoff[Any, Any]) -> Agent[Any] | None:

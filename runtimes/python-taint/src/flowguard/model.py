@@ -22,6 +22,8 @@ class ModelDestination:
 
     provider: str
     model: str
+    # Policy-defined location class, such as external, internal, or local;
+    # Flowguard uses it for rule matching but does not verify the deployment.
     trust_zone: str = "external"
 
     @property
